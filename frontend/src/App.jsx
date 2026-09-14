@@ -64,7 +64,7 @@ function App() {
     try {
       const activeMode = typeof requestedMode === 'string' ? requestedMode : feedMode;
       const isFollowingOnly = activeMode === 'following';
-      const response = await fetch(`http://localhost:8000/feed?following_only=${isFollowingOnly}`, {
+      const response = await fetch(`http://13.62.51.232:8000/feed?following_only=${isFollowingOnly}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.status === 401) {
@@ -81,7 +81,7 @@ function App() {
 
   const fetchProfile = async (userId) => {
     try {
-      const response = await fetch(`http://localhost:8000/users/${userId}/profile`, {
+      const response = await fetch(`http://13.62.51.232:8000/users/${userId}/profile`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.status === 401) {
@@ -104,7 +104,7 @@ function App() {
     }
     const delayDebounceFn = setTimeout(async () => {
       try {
-        const response = await fetch(`http://localhost:8000/users/search?q=${searchQuery}`, {
+        const response = await fetch(`http://13.62.51.232:8000/users/search?q=${searchQuery}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error('Search failed');
@@ -119,7 +119,7 @@ function App() {
 
   const navigateToMyProfile = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/users/search?q=${email}`, {
+      const response = await fetch(`http://13.62.51.232:8000/users/search?q=${email}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -170,7 +170,7 @@ function App() {
       const fetchLikedPosts = async () => {
         setLoadingLiked(true);
         try {
-          const response = await fetch('http://localhost:8000/users/me/liked-posts', {
+          const response = await fetch('http://13.62.51.232:8000/users/me/liked-posts', {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (response.ok) {
@@ -194,7 +194,7 @@ function App() {
     formData.append('username', email);
     formData.append('password', password);
     try {
-      const response = await fetch('http://localhost:8000/auth/jwt/login', {
+      const response = await fetch('http://13.62.51.232:8000/auth/jwt/login', {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData
@@ -213,7 +213,7 @@ function App() {
     e.preventDefault();
     setError('');
     try {
-      const response = await fetch('http://localhost:8000/auth/register', {
+      const response = await fetch('http://13.62.51.232:8000/auth/register', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -250,7 +250,7 @@ function App() {
       const uploadData = new FormData();
       uploadData.append('caption', caption || '');
       uploadData.append('file', finalFile);
-      const response = await fetch('http://localhost:8000/upload', {
+      const response = await fetch('http://13.62.51.232:8000/upload', {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: uploadData
@@ -307,7 +307,7 @@ function App() {
           return updatedPosts.filter(post => post.is_liked === true);
         });
       }
-      const response = await fetch(`http://localhost:8000/posts/${postId}/like`, {
+      const response = await fetch(`http://13.62.51.232:8000/posts/${postId}/like`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -319,7 +319,7 @@ function App() {
 
   const handleFollowToggle = async (targetUserId) => {
     try {
-      const response = await fetch(`http://localhost:8000/users/${targetUserId}/follow`, {
+      const response = await fetch(`http://13.62.51.232:8000/users/${targetUserId}/follow`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -375,7 +375,7 @@ function App() {
     const text = commentInputs[postId];
     if (!text || !text.trim()) return;
     try {
-      const response = await fetch(`http://localhost:8000/posts/${postId}/comments`, {
+      const response = await fetch(`http://13.62.51.232:8000/posts/${postId}/comments`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ text })
@@ -420,7 +420,7 @@ function App() {
       return;
     }
     try {
-      const response = await fetch(`http://localhost:8000/posts/${postId}/comments`, {
+      const response = await fetch(`http://13.62.51.232:8000/posts/${postId}/comments`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Failed to fetch comments');
@@ -434,7 +434,7 @@ function App() {
 
   const fetchSavedPosts = async () => {
     try {
-      const response = await fetch(`http://localhost:8000/users/me/saved`, {
+      const response = await fetch(`http://13.62.51.232:8000/users/me/saved`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Failed to fetch saved posts');
@@ -460,7 +460,7 @@ function App() {
       if (typeof setUserPosts === 'function') setUserPosts(updatePostState);
       if (typeof setLikedPosts === 'function') setLikedPosts(updatePostState);
       if (typeof setSavedPosts === 'function') setSavedPosts(updatePostState);
-      const response = await fetch(`http://localhost:8000/posts/${postId}/save`, {
+      const response = await fetch(`http://13.62.51.232:8000/posts/${postId}/save`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -499,7 +499,7 @@ function App() {
       if (typeof setSavedPosts === 'function') setSavedPosts(decrementCommentCount);
       if (typeof setLikedPosts === 'function') setLikedPosts(decrementCommentCount); 
       
-      const response = await fetch(`http://localhost:8000/comments/${commentId}`, {
+      const response = await fetch(`http://13.62.51.232:8000/comments/${commentId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -511,7 +511,7 @@ function App() {
 
   const handleViewLikers = async (postId) => {
     try {
-      const response = await fetch(`http://localhost:8000/posts/${postId}/likes`, {
+      const response = await fetch(`http://13.62.51.232:8000/posts/${postId}/likes`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Failed to fetch likers');
@@ -526,7 +526,7 @@ function App() {
   const handleDeletePost = async (postId) => {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
     try {
-      const response = await fetch(`http://localhost:8000/posts/${postId}`, {
+      const response = await fetch(`http://13.62.51.232:8000/posts/${postId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -553,7 +553,7 @@ function App() {
     if (finalFile) formData.append('file', finalFile);
     formData.append('remove_photo', removePhoto ? 'true' : 'false');
     try {
-      const response = await fetch('http://localhost:8000/users/me/profile', {
+      const response = await fetch('http://13.62.51.232:8000/users/me/profile', {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -578,7 +578,7 @@ function App() {
   const handleViewFollows = async (type) => {
     if (viewedUser.email !== email) return;
     try {
-      const response = await fetch(`http://localhost:8000/users/${viewedUser.id}/${type}`, {
+      const response = await fetch(`http://13.62.51.232:8000/users/${viewedUser.id}/${type}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error(`Failed to fetch ${type}`);

@@ -32,7 +32,7 @@ const ProfilePage = ({
 
         <div className="profile-avatar-wrapper">
           {viewedUser.profile_picture_url ? (
-            <img src={`http://localhost:8000${viewedUser.profile_picture_url}`} alt="Profile" className="profile-avatar-img" />
+            <img src={`http://http://13.62.51.232:8000${viewedUser.profile_picture_url}`} alt="Profile" className="profile-avatar-img" />
           ) : (
             <div className="profile-avatar-placeholder">{viewedUser.email[0].toUpperCase()}</div>
           )}
