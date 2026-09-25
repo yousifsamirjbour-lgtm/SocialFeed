@@ -1,5 +1,6 @@
 import React from 'react';
 import PostCard from '../components/PostCard';
+import ProfileAvatar from '../components/ProfileAvatar';
 
 const ProfilePage = ({
   viewedUser, email, navigateToFeed, handleFollowToggle,
@@ -31,11 +32,7 @@ const ProfilePage = ({
         <button onClick={navigateToFeed} className="back-nav-btn">← Back to Feed</button>
 
         <div className="profile-avatar-wrapper">
-          {viewedUser.profile_picture_url ? (
-            <img src={`http://https://socialfeed.duckdns.org/api${viewedUser.profile_picture_url}`} alt="Profile" className="profile-avatar-img" />
-          ) : (
-            <div className="profile-avatar-placeholder">{viewedUser.email[0].toUpperCase()}</div>
-          )}
+          <ProfileAvatar profilePictureUrl={viewedUser.profile_picture_url} />
         </div>
 
         <div className="profile-title-row">
