@@ -16,5 +16,5 @@ dependencies = [
     "uvicorn[standard]>=0.51.0",
     "langchain-tavily",
     "langgraph",
-    "langchain-groq"
+    "langchain-groq",
 ]
