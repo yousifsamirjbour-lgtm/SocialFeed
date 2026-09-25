@@ -3,21 +3,19 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-
 from backend.models.db import create_db_and_tables
 from backend.models.schemas import UserRead, UserCreate
 from backend.core.users import auth_backend, fastapi_users
 from backend.api.posts import router as posts_router
 from backend.api.comments import router as comments_router
 from backend.api.users import router as users_router
-
+from backend.api.search_route import router as search_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
     yield
 
-app = FastAPI(lifespan=lifespan)
-
+app = FastAPI(title="Joupro API", lifespan=lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -45,6 +43,7 @@ app.include_router(
 app.include_router(posts_router)
 app.include_router(comments_router)
 app.include_router(users_router)
+app.include_router(search_router, prefix="/api")
 
 # Static Files
 os.makedirs("uploads", exist_ok=True)

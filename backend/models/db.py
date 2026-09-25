@@ -1,18 +1,18 @@
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
-
 from sqlalchemy import Column, String, Text, DateTime, ForeignKey
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import Uuid
-
 from fastapi import Depends
 from fastapi_users_db_sqlalchemy.generics import GUID
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
+import os
+from dotenv import load_dotenv
 
-# If you want to test this locally BEFORE setting up Docker, change "@db:5432" to "@localhost:5432"
-DATABASE_URL = "postgresql+asyncpg://postgres:2003@db:5432/socialfeed"
+load_dotenv()
+DATABASE_URL = os.getenv("DATABASE_URL")
 class Base(DeclarativeBase):
     pass
 

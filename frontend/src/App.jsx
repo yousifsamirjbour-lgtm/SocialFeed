@@ -6,6 +6,7 @@ import AuthPage from './pages/AuthPage';
 import FeedPage from './pages/FeedPage';
 import ProfilePage from './pages/ProfilePage';
 import SearchPage from './pages/SearchPage';
+import SearchAgentPage from './pages/SearchAgentPage';
 
 // Import Components
 import Navbar from './components/Navbar';
@@ -712,6 +713,8 @@ function App() {
             navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle}
           />
         )}
+
+        {currentView === 'agent-search' && <SearchAgentPage />}
       </div>
 
       {showLikersModal && <LikersModal setShowLikersModal={setShowLikersModal} currentLikers={currentLikers} email={email} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />}
