@@ -14,4 +14,7 @@ dependencies = [
     "psycopg2-binary>=2.9.13",
     "python-dotenv>=1.2.2",
     "uvicorn[standard]>=0.51.0",
+    "langchain-tavily",
+    "langgraph",
+    "langchain-groq"
 ]
