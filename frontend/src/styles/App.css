@@ -89,6 +89,8 @@
   position: sticky;
   top: 0;
   z-index: 100;
+  box-sizing: border-box;
+  width: 100%;
 }
 
 .nav-logo {
@@ -101,6 +103,7 @@
   display: flex;
   gap: 12px;
   align-items: center;
+  flex-shrink: 0;
 }
 
 .nav-action-btn {
@@ -110,17 +113,27 @@
   font-size: 15px;
   font-weight: 600;
   cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
   gap: 6px;
   padding: 6px 10px;
   border-radius: 8px;
   transition: background-color 0.2s ease;
+  min-height: 44px;
+  box-sizing: border-box;
 }
 
 .nav-action-btn:hover { background-color: #efefef; }
 
+.nav-btn-icon {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
 .logout-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   padding: 6px 12px;
   background: transparent;
   color: #ed4956;
@@ -129,9 +142,56 @@
   cursor: pointer;
   font-weight: 600;
   font-size: 13px;
+  min-height: 44px;
+  box-sizing: border-box;
+  transition: background-color 0.2s ease;
 }
 
 .logout-btn:hover { background: #fff0f0; }
+
+.logout-btn-icon {
+  flex-shrink: 0;
+  pointer-events: none;
+}
+
+/* =========================================
+   MOBILE RESPONSIVE BREAKPOINT (<= 640px)
+   ========================================= */
+@media (max-width: 640px) {
+  .navbar {
+    padding: 6px 10px;
+  }
+
+  .nav-logo {
+    font-size: 18px;
+  }
+
+  .nav-actions {
+    gap: 4px;
+  }
+
+  /* Hide button text on mobile for clean Instagram/X icon-only top bar */
+  .nav-btn-text {
+    display: none;
+  }
+
+  .nav-action-btn {
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    border-radius: 50%;
+  }
+
+  .logout-btn {
+    padding: 8px;
+    min-width: 44px;
+    min-height: 44px;
+    justify-content: center;
+    border-radius: 50%;
+    border-color: #ed4956;
+  }
+}
 
 .back-nav-btn {
   align-self: flex-start;
