@@ -130,6 +130,13 @@
   pointer-events: none;
 }
 
+.nav-btn-text {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .logout-btn {
   display: inline-flex;
   align-items: center;

@@ -22,3 +22,33 @@ export function getUserDisplayName(user) {
   }
   return 'User';
 }
+
+/**
+ * Reusable utility to check if a user object or user ID matches the current logged-in user.
+ *
+ * @param {Object|string|null|undefined} targetUserOrId - Target user object (with .id or .user_id) or string ID.
+ * @param {string|null|undefined} currentUserId - The authenticated user's ID.
+ * @param {string|null|undefined} [currentUserEmail] - Optional fallback for legacy email comparison if needed.
+ * @returns {boolean} True if the target represents the current user.
+ */
+export function isCurrentUser(targetUserOrId, currentUserId, currentUserEmail = null) {
+  if (!targetUserOrId) return false;
+
+  const targetId = typeof targetUserOrId === 'object'
+    ? (targetUserOrId?.id ?? targetUserOrId?.user_id)
+    : targetUserOrId;
+
+  if (currentUserId && targetId) {
+    return String(targetId).toLowerCase() === String(currentUserId).toLowerCase();
+  }
+
+  // Fallback for legacy email comparison if target and current user both supply email
+  if (currentUserEmail && typeof targetUserOrId === 'object' && targetUserOrId?.email) {
+    if (String(targetUserOrId.email).toLowerCase() === String(currentUserEmail).toLowerCase()) {
+      return true;
+    }
+  }
+
+  return false;
+}
+

@@ -1,4 +1,5 @@
 import UserName from './UserName';
+import { isCurrentUser } from '../utils/user';
 
 const UserBadge = ({ 
   userObj, 
@@ -8,10 +9,7 @@ const UserBadge = ({
   navigateToProfile, 
   handleFollowToggle 
 }) => {
-  const isSelf = Boolean(
-    (currentUserId && userObj?.id && String(userObj.id).toLowerCase() === String(currentUserId).toLowerCase()) || 
-    (email && userObj?.email && userObj.email.toLowerCase() === email.toLowerCase())
-  );
+  const isSelf = isCurrentUser(userObj, currentUserId, email);
 
   return (
     <span className="user-badge">

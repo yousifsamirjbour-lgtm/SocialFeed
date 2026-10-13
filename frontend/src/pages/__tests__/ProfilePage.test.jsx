@@ -112,4 +112,78 @@ describe('ProfilePage', () => {
     fireEvent.click(backBtn);
     expect(defaultProps.navigateToFeed).toHaveBeenCalled();
   });
+
+  it('allows opening followers and following modal on own profile even without email in viewedUser', () => {
+    const ownUserWithoutEmail = {
+      id: 'my-id',
+      name: 'My Name',
+      bio: 'Bio',
+      followers_count: 12,
+      following_count: 8
+    };
+    render(<ProfilePage {...defaultProps} viewedUser={ownUserWithoutEmail} currentUserId="my-id" />);
+
+    const followersStat = screen.getByText(/followers/i);
+    fireEvent.click(followersStat);
+    expect(defaultProps.handleViewFollows).toHaveBeenCalledWith('followers');
+
+    const followingStat = screen.getByText(/following/i);
+    fireEvent.click(followingStat);
+    expect(defaultProps.handleViewFollows).toHaveBeenCalledWith('following');
+  });
+
+  it('renders liked posts when on own profile with profileTab="liked"', () => {
+    const likedPost = {
+      id: 'liked-post-1',
+      caption: 'Amazing sunset from vacation',
+      url: 'https://example.com/sunset.jpg',
+      file_type: 'image/jpeg',
+      file_name: 'sunset.jpg',
+      likes_count: 42,
+      comment_count: 3,
+      is_liked: true,
+      owner: { id: 'photographer-id', name: 'Photographer' }
+    };
+
+    render(
+      <ProfilePage
+        {...defaultProps}
+        viewedUser={{ id: 'my-id', name: 'My Name' }}
+        currentUserId="my-id"
+        profileTab="liked"
+        likedPosts={[likedPost]}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: 'Liked' })).toBeInTheDocument();
+    expect(screen.getByText('Amazing sunset from vacation')).toBeInTheDocument();
+  });
+
+  it('does NOT render Liked tab or allow opening follow modals on someone else profile', () => {
+    const handleViewFollowsMock = vi.fn();
+    render(
+      <ProfilePage
+        {...defaultProps}
+        viewedUser={otherUser}
+        currentUserId="my-id"
+        email="me@example.com"
+        handleViewFollows={handleViewFollowsMock}
+      />
+    );
+
+    // Liked tab should not exist on someone else's profile
+    expect(screen.queryByRole('button', { name: 'Liked' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Saved' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Posts' })).not.toBeInTheDocument();
+
+    // Clicking followers or following should not open modal
+    const followersStat = screen.getByText(/followers/i);
+    fireEvent.click(followersStat);
+    expect(handleViewFollowsMock).not.toHaveBeenCalled();
+
+    const followingStat = screen.getByText(/following/i);
+    fireEvent.click(followingStat);
+    expect(handleViewFollowsMock).not.toHaveBeenCalled();
+  });
 });
+

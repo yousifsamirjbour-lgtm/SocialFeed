@@ -117,4 +117,62 @@ describe('PostCard Component', () => {
     // Caption never contains a follow button
     expect(document.querySelector('.post-caption').querySelector('.inline-follow-btn')).toBeNull();
   });
+
+  it('allows delete comment only for comment author or post owner', () => {
+    const postWithComments = {
+      ...basePost,
+      comment_count: 2,
+      owner: { id: 'post-owner-id', name: 'Post Owner' }
+    };
+
+    const loadedComments = {
+      'post-123': [
+        { id: 'c1', text: 'Comment by Author 1', author: { id: 'author-1-id', name: 'Author One' } },
+        { id: 'c2', text: 'Comment by Author 2', author: { id: 'author-2-id', name: 'Author Two' } }
+      ]
+    };
+
+    const showComments = { 'post-123': true };
+
+    // Viewer is Author 1: can delete c1, but cannot delete c2
+    const { rerender } = render(
+      <PostCard
+        {...defaultProps}
+        post={postWithComments}
+        currentUserId="author-1-id"
+        loadedComments={loadedComments}
+        showComments={showComments}
+      />
+    );
+
+    const deleteButtonsAuthor1 = screen.getAllByRole('button', { name: 'Delete' });
+    // Only 1 comment delete button (no post delete button since viewer is not post owner)
+    expect(deleteButtonsAuthor1).toHaveLength(1);
+
+    // Viewer is Post Owner: can delete both comments plus post
+    rerender(
+      <PostCard
+        {...defaultProps}
+        post={postWithComments}
+        currentUserId="post-owner-id"
+        loadedComments={loadedComments}
+        showComments={showComments}
+      />
+    );
+    const deleteButtonsOwner = screen.getAllByRole('button', { name: 'Delete' });
+    expect(deleteButtonsOwner).toHaveLength(2); // Both comments
+
+    // Viewer is random 3rd party: cannot delete any comments
+    rerender(
+      <PostCard
+        {...defaultProps}
+        post={postWithComments}
+        currentUserId="random-user-id"
+        loadedComments={loadedComments}
+        showComments={showComments}
+      />
+    );
+    expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
+  });
 });
+

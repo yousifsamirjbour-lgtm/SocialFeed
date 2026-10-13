@@ -14,6 +14,7 @@ import Navbar from './components/Navbar';
 import LikersModal from './components/LikersModal';
 import FollowModal from './components/FollowModal';
 import EditProfileModal from './components/EditProfileModal';
+import { isCurrentUser } from './utils/user';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -199,7 +200,7 @@ function App() {
   }, [currentView, fetchFeed]);
 
   useEffect(() => {
-    if (profileTab === 'liked' && viewedUser?.email === email && likedPosts.length === 0) {
+    if (profileTab === 'liked' && isCurrentUser(viewedUser, currentUserId, email) && likedPosts.length === 0) {
       const fetchLikedPosts = async () => {
         try {
           const response = await fetch(`${API_BASE_URL}/users/me/liked-posts`, {
@@ -215,7 +216,7 @@ function App() {
       };
       fetchLikedPosts();
     }
-  }, [profileTab, email, viewedUser, token, likedPosts.length]);
+  }, [profileTab, email, viewedUser, currentUserId, token, likedPosts.length]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -627,7 +628,7 @@ function App() {
   };
 
   const handleViewFollows = async (type) => {
-    if (viewedUser.email !== email) return;
+    if (!isCurrentUser(viewedUser, currentUserId, email)) return;
     try {
       const response = await fetch(`${API_BASE_URL}/users/${viewedUser.id}/${type}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -729,7 +730,7 @@ function App() {
       />
 
       <div className="main-feed-container">
-        {error && <div className="error-msg" style={{ width: '470px' }}>{error}</div>}
+        {error && <div className="error-msg" style={{ width: '100%', maxWidth: '470px', boxSizing: 'border-box' }}>{error}</div>}
 
         {currentView === 'feed' && (
           <FeedPage 

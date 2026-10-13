@@ -1,6 +1,7 @@
 import PostCard from '../components/PostCard';
 import ProfileAvatar from '../components/ProfileAvatar';
 import UserName from '../components/UserName';
+import { isCurrentUser } from '../utils/user';
 
 const ProfilePage = ({
   viewedUser, email, currentUserId, navigateToFeed, handleFollowToggle,
@@ -12,10 +13,7 @@ const ProfilePage = ({
   handleDeletePost, handleLikeToggle, handleViewLikers, handleSaveToggle,
   handleToggleComments, handleDeleteComment, handleCommentSubmit, navigateToProfile
 }) => {
-  const isOwnProfile = Boolean(
-    (currentUserId && viewedUser?.id && String(viewedUser.id).toLowerCase() === String(currentUserId).toLowerCase()) || 
-    (email && viewedUser?.email && viewedUser.email.toLowerCase() === email.toLowerCase())
-  );
+  const isOwnProfile = isCurrentUser(viewedUser, currentUserId, email);
 
   // Helper to render the shared PostCard with all necessary props
   const renderProfilePost = (post) => (

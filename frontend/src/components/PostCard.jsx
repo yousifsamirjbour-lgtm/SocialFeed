@@ -1,4 +1,5 @@
 import UserBadge from './UserBadge';
+import { isCurrentUser } from '../utils/user';
 
 const PostCard = ({
   post,
@@ -22,13 +23,7 @@ const PostCard = ({
     ? loadedComments[post.id].length 
     : Number(post.comment_count ?? post.comments_count ?? 0);
 
-  const isOwner = Boolean(
-    (currentUserId && (
-      (post.user_id && String(post.user_id).toLowerCase() === String(currentUserId).toLowerCase()) || 
-      (post.owner?.id && String(post.owner.id).toLowerCase() === String(currentUserId).toLowerCase())
-    )) || 
-    (email && post.owner?.email && post.owner.email.toLowerCase() === email.toLowerCase())
-  );
+  const isOwner = isCurrentUser(post.owner || post.user_id, currentUserId, email);
 
   return (
     <div className="post-card">
@@ -126,11 +121,9 @@ const PostCard = ({
         {showComments[post.id] && loadedComments[post.id] && (
           <div className="comments-list">
             {loadedComments[post.id].map(comment => {
-              const isCommentAuthor = (currentUserId && (comment.user_id === currentUserId || comment.author?.id === currentUserId)) ||
-                                      (email && comment.author?.email === email);
-              const isPostOwner = (currentUserId && (post.user_id === currentUserId || post.owner?.id === currentUserId)) ||
-                                  (email && post.owner?.email === email);
-              const canDelete = (currentUserId || email) && (isCommentAuthor || isPostOwner);
+              const isCommentAuthor = isCurrentUser(comment.author || comment.user_id, currentUserId, email);
+              const isPostOwner = isOwner;
+              const canDelete = isCommentAuthor || isPostOwner;
 
               return (
                 <div key={comment.id} className="comment-item" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
