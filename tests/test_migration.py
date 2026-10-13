@@ -41,7 +41,8 @@ async def test_migration_execution_on_test_db(tmp_path, monkeypatch):
     conn.execute("CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, name TEXT)")
     conn.execute("INSERT INTO users VALUES ('1', 'user1@gmail.com', NULL)")
     conn.execute("INSERT INTO users VALUES ('2', 'x@gmail.com', '')")
-    conn.execute(f"INSERT INTO users VALUES ('3', '{"b" * 60}@gmail.com', NULL)")
+    long_email = "b" * 60 + "@gmail.com"
+    conn.execute(f"INSERT INTO users VALUES ('3', '{long_email}', NULL)")
     conn.commit()
     conn.close()
 
