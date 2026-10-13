@@ -112,6 +112,8 @@ async def test_get_feed(client, db_session, test_user, test_user_2, sample_post,
     feed = res.json()
     assert len(feed) >= 1
     assert feed[0]["id"] == str(sample_post.id)
+    assert feed[0]["owner"]["name"] == test_user.name
+    assert "email" not in feed[0]["owner"]
 
     # Following-only feed when not following anyone
     res_following_empty = await client.get("/feed?following_only=true", headers=auth_headers)

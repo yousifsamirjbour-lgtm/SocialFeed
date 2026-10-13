@@ -12,7 +12,7 @@ const FeedPage = ({
   onPostCropComplete, onPostFileChange, fileKey, uploading, setUploading,
   
   // PostCard Props
-  email, loadedComments, showComments, commentInputs, setCommentInputs,
+  email, currentUserId, loadedComments, showComments, commentInputs, setCommentInputs,
   handleDeletePost, handleLikeToggle, handleViewLikers, handleSaveToggle,
   handleToggleComments, handleDeleteComment, handleCommentSubmit,
   navigateToProfile, handleFollowToggle
@@ -104,6 +104,7 @@ const FeedPage = ({
             key={post.id}
             post={post}
             email={email}
+            currentUserId={currentUserId}
             loadedComments={loadedComments}
             showComments={showComments}
             commentInputs={commentInputs}

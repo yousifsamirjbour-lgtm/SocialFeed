@@ -1,6 +1,6 @@
 import UserBadge from './UserBadge';
 
-const LikersModal = ({ setShowLikersModal, currentLikers, email, navigateToProfile, handleFollowToggle }) => {
+const LikersModal = ({ setShowLikersModal, currentLikers, email, currentUserId, navigateToProfile, handleFollowToggle }) => {
   return (
     <div className="modal-overlay" onClick={() => setShowLikersModal(false)}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -17,6 +17,7 @@ const LikersModal = ({ setShowLikersModal, currentLikers, email, navigateToProfi
                 <UserBadge 
                   userObj={liker} 
                   email={email} 
+                  currentUserId={currentUserId}
                   navigateToProfile={navigateToProfile} 
                   handleFollowToggle={handleFollowToggle} 
                 />

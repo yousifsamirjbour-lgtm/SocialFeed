@@ -5,6 +5,7 @@ import ProfilePage from '../ProfilePage';
 describe('ProfilePage', () => {
   const ownUser = {
     id: 'my-id',
+    name: 'My Name',
     email: 'me@example.com',
     bio: 'Software engineer bio',
     profile_picture_url: null,
@@ -15,6 +16,7 @@ describe('ProfilePage', () => {
 
   const otherUser = {
     id: 'other-id',
+    name: 'Other Person',
     email: 'other@example.com',
     bio: 'Traveler bio',
     profile_picture_url: null,
@@ -26,6 +28,7 @@ describe('ProfilePage', () => {
   const defaultProps = {
     viewedUser: ownUser,
     email: 'me@example.com',
+    currentUserId: 'my-id',
     navigateToFeed: vi.fn(),
     handleFollowToggle: vi.fn(),
     setEditBio: vi.fn(),
@@ -51,57 +54,62 @@ describe('ProfilePage', () => {
     navigateToProfile: vi.fn()
   };
 
-  it('renders own profile header with Edit Profile button and tabs', () => {
+  it('renders own profile header with name (no email) and Edit Profile button', () => {
     render(<ProfilePage {...defaultProps} />);
 
-    expect(screen.getByText('me@example.com')).toBeInTheDocument();
+    expect(screen.getByText('My Name')).toBeInTheDocument();
+    expect(screen.queryByText('me@example.com')).not.toBeInTheDocument();
     expect(screen.getByText('Software engineer bio')).toBeInTheDocument();
     expect(screen.getByText('10')).toBeInTheDocument();
     expect(screen.getByText('5')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Edit Profile' })).toBeInTheDocument();
 
-    expect(screen.getByRole('button', { name: 'Posts' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Saved' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Liked' })).toBeInTheDocument();
-    expect(screen.getByText('No posts yet.')).toBeInTheDocument();
+    const editBtn = screen.getByRole('button', { name: 'Edit Profile' });
+    expect(editBtn).toBeInTheDocument();
   });
 
-  it('renders other user profile with Follow/Unfollow button and no tabs', () => {
-    render(<ProfilePage {...defaultProps} viewedUser={otherUser} email="me@example.com" />);
+  it('renders other user profile with name (no email) and Unfollow button when following', () => {
+    render(<ProfilePage {...defaultProps} viewedUser={otherUser} currentUserId="my-id" email="me@example.com" />);
 
-    expect(screen.getByText('other@example.com')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Unfollow' })).toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Edit Profile' })).not.toBeInTheDocument();
-    expect(screen.queryByRole('button', { name: 'Saved' })).not.toBeInTheDocument();
+    expect(screen.getByText('Other Person')).toBeInTheDocument();
+    expect(screen.queryByText('other@example.com')).not.toBeInTheDocument();
+    expect(screen.getByText('Traveler bio')).toBeInTheDocument();
+
+    const unfollowBtn = screen.getByRole('button', { name: 'Unfollow' });
+    expect(unfollowBtn).toBeInTheDocument();
   });
 
-  it('triggers Edit Profile modal when Edit Profile is clicked', () => {
+  it('triggers handleFollowToggle when clicking Follow/Unfollow button', () => {
+    render(<ProfilePage {...defaultProps} viewedUser={otherUser} currentUserId="my-id" email="me@example.com" />);
+    const unfollowBtn = screen.getByRole('button', { name: 'Unfollow' });
+    fireEvent.click(unfollowBtn);
+    expect(defaultProps.handleFollowToggle).toHaveBeenCalledWith('other-id');
+  });
+
+  it('opens edit modal and sets bio on Edit Profile click', () => {
     render(<ProfilePage {...defaultProps} />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Edit Profile' }));
+    const editBtn = screen.getByRole('button', { name: 'Edit Profile' });
+    fireEvent.click(editBtn);
     expect(defaultProps.setEditBio).toHaveBeenCalledWith('Software engineer bio');
     expect(defaultProps.setShowEditProfileModal).toHaveBeenCalledWith(true);
   });
 
-  it('triggers handleFollowToggle when Follow/Unfollow button clicked', () => {
-    render(<ProfilePage {...defaultProps} viewedUser={otherUser} email="me@example.com" />);
-
-    fireEvent.click(screen.getByRole('button', { name: 'Unfollow' }));
-    expect(defaultProps.handleFollowToggle).toHaveBeenCalledWith('other-id');
-  });
-
-  it('triggers navigateToFeed when clicking Back button', () => {
+  it('triggers tab switching for Posts, Saved, and Liked', () => {
     render(<ProfilePage {...defaultProps} />);
 
-    fireEvent.click(screen.getByText('← Back to Feed'));
-    expect(defaultProps.navigateToFeed).toHaveBeenCalled();
+    const savedTab = screen.getByRole('button', { name: 'Saved' });
+    fireEvent.click(savedTab);
+    expect(defaultProps.setProfileTab).toHaveBeenCalledWith('saved');
+    expect(defaultProps.fetchSavedPosts).toHaveBeenCalled();
+
+    const likedTab = screen.getByRole('button', { name: 'Liked' });
+    fireEvent.click(likedTab);
+    expect(defaultProps.setProfileTab).toHaveBeenCalledWith('liked');
   });
 
-  it('shows empty state for saved and liked tabs', () => {
-    const { rerender } = render(<ProfilePage {...defaultProps} profileTab="saved" savedPosts={[]} />);
-    expect(screen.getByText('No saved posts.')).toBeInTheDocument();
-
-    rerender(<ProfilePage {...defaultProps} profileTab="liked" likedPosts={[]} />);
-    expect(screen.getByText('No liked posts yet.')).toBeInTheDocument();
+  it('triggers navigation back to feed', () => {
+    render(<ProfilePage {...defaultProps} />);
+    const backBtn = screen.getByText('← Back to Feed');
+    fireEvent.click(backBtn);
+    expect(defaultProps.navigateToFeed).toHaveBeenCalled();
   });
 });

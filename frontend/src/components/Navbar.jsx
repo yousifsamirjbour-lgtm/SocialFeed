@@ -1,4 +1,4 @@
-const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLogout }) => {
+const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLogout, currentUserName }) => {
   return (
     <nav className="navbar">
       <h2 className="nav-logo" style={{ cursor: 'pointer' }} onClick={navigateToFeed}>
@@ -15,7 +15,7 @@ const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLog
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
-          Profile
+          {currentUserName || 'Profile'}
         </button>
           
         <button 

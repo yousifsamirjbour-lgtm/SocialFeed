@@ -7,7 +7,8 @@ describe('Navbar Component', () => {
     navigateToFeed: vi.fn(),
     navigateToMyProfile: vi.fn(),
     setCurrentView: vi.fn(),
-    handleLogout: vi.fn()
+    handleLogout: vi.fn(),
+    currentUserName: ''
   };
 
   it('renders brand name and navigation buttons', () => {
@@ -18,6 +19,12 @@ describe('Navbar Component', () => {
     expect(screen.getByRole('button', { name: /Find Users/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /AI Web Search/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Logout/i })).toBeInTheDocument();
+  });
+
+  it('renders logged-in user display name on profile button when provided', () => {
+    render(<Navbar {...defaultProps} currentUserName="Jane Doe" />);
+
+    expect(screen.getByRole('button', { name: /Jane Doe/i })).toBeInTheDocument();
   });
 
   it('triggers navigateToFeed when clicking logo', () => {

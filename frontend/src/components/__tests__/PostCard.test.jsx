@@ -15,7 +15,7 @@ describe('PostCard Component', () => {
     is_saved: false,
     owner: {
       id: 'user-1',
-      email: 'owner@example.com',
+      name: 'Post Owner',
       is_following: false
     }
   };
@@ -23,6 +23,7 @@ describe('PostCard Component', () => {
   const defaultProps = {
     post: basePost,
     email: 'viewer@example.com',
+    currentUserId: 'viewer-id',
     loadedComments: {},
     showComments: {},
     commentInputs: {},
@@ -38,12 +39,16 @@ describe('PostCard Component', () => {
     handleFollowToggle: vi.fn()
   };
 
-  it('renders image post correctly with caption and like count', () => {
+  it('renders image post correctly with caption, like count, and author name', () => {
     render(<PostCard {...defaultProps} />);
 
     expect(screen.getByText('Test post caption')).toBeInTheDocument();
     expect(screen.getByText('5 likes')).toBeInTheDocument();
     expect(screen.getByText('2 comments')).toBeInTheDocument();
+
+    // Verify display name appears, and email never appears
+    expect(screen.getAllByText('Post Owner')).toHaveLength(2);
+    expect(screen.queryByText('owner@example.com')).not.toBeInTheDocument();
 
     const img = screen.getByRole('img', { name: /test.jpg/i });
     expect(img).toHaveAttribute('src', basePost.url);
@@ -85,14 +90,31 @@ describe('PostCard Component', () => {
 
   it('shows delete button only when current user is the owner', () => {
     // When viewer is NOT owner
-    const { rerender } = render(<PostCard {...defaultProps} email="viewer@example.com" />);
+    const { rerender } = render(<PostCard {...defaultProps} currentUserId="other-user" email="viewer@example.com" />);
     expect(screen.queryByTitle('Delete Post')).not.toBeInTheDocument();
 
     // When viewer IS owner
-    rerender(<PostCard {...defaultProps} email="owner@example.com" />);
+    rerender(<PostCard {...defaultProps} currentUserId="user-1" email="owner@example.com" />);
     const deleteBtn = screen.getByTitle('Delete Post');
     expect(deleteBtn).toBeInTheDocument();
     fireEvent.click(deleteBtn);
     expect(defaultProps.handleDeletePost).toHaveBeenCalledWith('post-123');
+  });
+
+  it('never shows follow button next to caption, and never shows follow button for own post', () => {
+    // When viewing own post
+    const { rerender } = render(<PostCard {...defaultProps} currentUserId="user-1" />);
+    // Entire component should have 0 follow buttons
+    expect(screen.queryByRole('button', { name: /follow/i })).not.toBeInTheDocument();
+
+    // When viewing someone else's post
+    rerender(<PostCard {...defaultProps} currentUserId="viewer-id" />);
+    // Follow button should exist in the header, but NOT in the caption
+    const followButtons = screen.getAllByRole('button', { name: /follow/i });
+    expect(followButtons).toHaveLength(1);
+    // Header contains the follow button
+    expect(document.querySelector('.post-header').querySelector('.inline-follow-btn')).toBeInTheDocument();
+    // Caption never contains a follow button
+    expect(document.querySelector('.post-caption').querySelector('.inline-follow-btn')).toBeNull();
   });
 });

@@ -3,6 +3,7 @@ import UserBadge from './UserBadge';
 const PostCard = ({
   post,
   email,
+  currentUserId,
   loadedComments,
   showComments,
   commentInputs,
@@ -21,17 +22,27 @@ const PostCard = ({
     ? loadedComments[post.id].length 
     : Number(post.comment_count ?? post.comments_count ?? 0);
 
+  const isOwner = Boolean(
+    (currentUserId && (
+      (post.user_id && String(post.user_id).toLowerCase() === String(currentUserId).toLowerCase()) || 
+      (post.owner?.id && String(post.owner.id).toLowerCase() === String(currentUserId).toLowerCase())
+    )) || 
+    (email && post.owner?.email && post.owner.email.toLowerCase() === email.toLowerCase())
+  );
+
   return (
     <div className="post-card">
        <div className="post-header post-header-row">
         <UserBadge 
           userObj={post.owner} 
           email={email} 
+          currentUserId={currentUserId}
+          showFollowButton={!isOwner}
           navigateToProfile={navigateToProfile} 
           handleFollowToggle={handleFollowToggle} 
         />
         
-        {post.owner.email === email && (
+        {isOwner && (
           <button onClick={() => handleDeletePost(post.id)} className="delete-post-btn" title="Delete Post">
             <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
               <polyline points="3 6 5 6 21 6"></polyline>
@@ -95,7 +106,14 @@ const PostCard = ({
         </div>
 
         <div className="post-caption" style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-          <UserBadge userObj={post.owner} email={email} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />
+          <UserBadge 
+            userObj={post.owner} 
+            email={email} 
+            currentUserId={currentUserId}
+            showFollowButton={false}
+            navigateToProfile={navigateToProfile} 
+            handleFollowToggle={handleFollowToggle} 
+          />
           <span>{post.caption}</span>
         </div>
 
@@ -108,14 +126,23 @@ const PostCard = ({
         {showComments[post.id] && loadedComments[post.id] && (
           <div className="comments-list">
             {loadedComments[post.id].map(comment => {
-              const isCommentAuthor = comment.author?.email === email;
-              const isPostOwner = post.owner?.email === email;
-              const canDelete = email && (isCommentAuthor || isPostOwner);
+              const isCommentAuthor = (currentUserId && (comment.user_id === currentUserId || comment.author?.id === currentUserId)) ||
+                                      (email && comment.author?.email === email);
+              const isPostOwner = (currentUserId && (post.user_id === currentUserId || post.owner?.id === currentUserId)) ||
+                                  (email && post.owner?.email === email);
+              const canDelete = (currentUserId || email) && (isCommentAuthor || isPostOwner);
 
               return (
                 <div key={comment.id} className="comment-item" style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>
-                    <UserBadge userObj={comment.author} email={email} showFollowButton={false} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />
+                    <UserBadge 
+                      userObj={comment.author} 
+                      email={email} 
+                      currentUserId={currentUserId}
+                      showFollowButton={false} 
+                      navigateToProfile={navigateToProfile} 
+                      handleFollowToggle={handleFollowToggle} 
+                    />
                     <span>{comment.text}</span>
                   </div>
                   {canDelete && (

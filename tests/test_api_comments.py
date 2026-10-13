@@ -11,6 +11,8 @@ async def test_create_comment(client, sample_post, auth_headers):
     assert data["text"] == "A wonderful comment"
     assert "id" in data
     assert data["author"]["id"] is not None
+    assert data["author"]["name"] is not None
+    assert "email" not in data["author"]
 
     # Post not found
     res_404 = await client.post(f"/posts/{uuid.uuid4()}/comments", json=payload, headers=auth_headers)
@@ -31,6 +33,8 @@ async def test_get_comments(client, sample_post, sample_comment, auth_headers):
     assert len(comments) >= 1
     assert comments[0]["id"] == str(sample_comment.id)
     assert "is_following" in comments[0]["author"]
+    assert comments[0]["author"]["name"] is not None
+    assert "email" not in comments[0]["author"]
 
     # Post not found
     res_404 = await client.get(f"/posts/{uuid.uuid4()}/comments", headers=auth_headers)

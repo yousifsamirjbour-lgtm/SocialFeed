@@ -4,6 +4,8 @@ import AuthPage from '../AuthPage';
 
 describe('AuthPage', () => {
   const defaultProps = {
+    name: '',
+    setName: vi.fn(),
     email: '',
     setEmail: vi.fn(),
     password: '',
@@ -18,18 +20,29 @@ describe('AuthPage', () => {
     handleRegister: vi.fn((e) => e.preventDefault())
   };
 
-  it('renders login form by default', () => {
+  it('renders login form by default with ONLY email and password', () => {
     render(<AuthPage {...defaultProps} />);
 
     expect(screen.getByText('SocialFeed')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Email address')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();
+    expect(screen.queryByPlaceholderText('Full Name')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument();
     expect(screen.getByText("Don't have an account?")).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign up' })).toBeInTheDocument();
   });
 
-  it('renders registration form when isRegistering is true', () => {
+  it('renders registration form with Full Name, Email, and Password when isRegistering is true', () => {
     render(<AuthPage {...defaultProps} isRegistering={true} />);
 
+    const nameInput = screen.getByPlaceholderText('Full Name');
+    expect(nameInput).toBeInTheDocument();
+    expect(nameInput).toHaveAttribute('required');
+    expect(nameInput).toHaveAttribute('minLength', '2');
+    expect(nameInput).toHaveAttribute('maxLength', '50');
+
+    expect(screen.getByPlaceholderText('Email address')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Password')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Sign up' })).toBeInTheDocument();
     expect(screen.getByText('Have an account?')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Log in' })).toBeInTheDocument();
@@ -44,7 +57,7 @@ describe('AuthPage', () => {
   });
 
   it('submits registration form when isRegistering is true', () => {
-    render(<AuthPage {...defaultProps} email="test@example.com" password="secretpassword" isRegistering={true} />);
+    render(<AuthPage {...defaultProps} name="John Doe" email="test@example.com" password="secretpassword" isRegistering={true} />);
 
     const submitBtn = screen.getByRole('button', { name: 'Sign up' });
     fireEvent.click(submitBtn);
