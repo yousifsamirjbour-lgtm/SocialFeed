@@ -1,4 +1,3 @@
-import React from 'react';
 import Cropper from 'react-easy-crop';
 import PostCard from '../components/PostCard';
 
@@ -8,7 +7,7 @@ const FeedPage = ({
   
   // Upload State & Handlers
   handleUpload, caption, setCaption, postVideoSrc, setPostVideoSrc,
-  postImageSrc, setPostImageSrc, selectedFile, setSelectedFile,
+  postImageSrc, setPostImageSrc, setSelectedFile,
   postCrop, setPostCrop, postZoom, setPostZoom, postAspect, setPostAspect,
   onPostCropComplete, onPostFileChange, fileKey, uploading, setUploading,
   

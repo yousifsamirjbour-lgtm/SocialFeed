@@ -1,4 +1,3 @@
-import React from 'react';
 import UserBadge from './UserBadge';
 
 const LikersModal = ({ setShowLikersModal, currentLikers, email, navigateToProfile, handleFollowToggle }) => {

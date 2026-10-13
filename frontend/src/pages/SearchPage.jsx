@@ -1,4 +1,3 @@
-import React from 'react';
 import UserBadge from '../components/UserBadge';
 
 const SearchPage = ({

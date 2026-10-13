@@ -8,12 +8,19 @@ export default defineConfig({
     host: true,
     proxy: {
       '/api': {
-        target: 'http://api:8000',
-        changeOrigin: true
+        target: process.env.VITE_API_TARGET || 'http://127.0.0.1:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api/, '')
       }
     },
     allowedHosts: [
       'socialfeed.duckdns.org'
     ]
+  },
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/test/setup.js',
+    css: false,
   }
 })

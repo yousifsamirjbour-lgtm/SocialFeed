@@ -43,6 +43,7 @@ app.include_router(
 app.include_router(posts_router)
 app.include_router(comments_router)
 app.include_router(users_router)
+app.include_router(search_router)
 app.include_router(search_router, prefix="/api")
 
 # Static Files

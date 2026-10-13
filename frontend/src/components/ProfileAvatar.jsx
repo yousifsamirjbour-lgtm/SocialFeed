@@ -1,16 +1,5 @@
-const API_BASE_URL = 'https://socialfeed.duckdns.org/api';
+import { getProfileImageUrl } from '../config/api';
 const DEFAULT_AVATAR_URL = '/default-avatar.svg';
-
-const getProfileImageUrl = (profilePictureUrl) => {
-  const trimmedUrl = profilePictureUrl?.trim();
-
-  if (!trimmedUrl) return DEFAULT_AVATAR_URL;
-  if (/^(https?:)?\/\//i.test(trimmedUrl)) {
-    return trimmedUrl.startsWith('//') ? `https:${trimmedUrl}` : trimmedUrl;
-  }
-
-  return `${API_BASE_URL}${trimmedUrl.startsWith('/') ? '' : '/'}${trimmedUrl}`;
-};
 
 const ProfileAvatar = ({ profilePictureUrl, className = 'profile-avatar-img' }) => {
   const handleImageError = (event) => {

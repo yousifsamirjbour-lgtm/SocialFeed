@@ -1,5 +1,3 @@
-import React from 'react';
-
 const AuthPage = ({
   email, setEmail,
   password, setPassword,

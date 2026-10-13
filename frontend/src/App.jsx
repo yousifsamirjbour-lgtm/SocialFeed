@@ -1,5 +1,6 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import './styles/App.css';
+import { API_BASE_URL } from './config/api';
 
 // Import Pages
 import AuthPage from './pages/AuthPage';
@@ -23,9 +24,8 @@ function App() {
   const [error, setError] = useState('');
   const [successMessage, setSuccessMessage] = useState('');
   const [caption, setCaption] = useState('');
-  const [file, setFile] = useState(null);
   const [uploading, setUploading] = useState(false);
-  const [fileKey, setFileKey] = useState(Date.now());
+  const [fileKey, setFileKey] = useState(0);
   const [commentInputs, setCommentInputs] = useState({});
   const [loadedComments, setLoadedComments] = useState({});
   const [showComments, setShowComments] = useState({});
@@ -43,8 +43,7 @@ function App() {
   const [imageSrc, setImageSrc] = useState(null);
   const [crop, setCrop] = useState({ x: 0, y: 0 });
   const [zoom, setZoom] = useState(1);
-  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
-  const [showCropModal, setShowCropModal] = useState(false); 
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null); 
   const [postImageSrc, setPostImageSrc] = useState(null);
   const [postCrop, setPostCrop] = useState({ x: 0, y: 0 });
   const [postZoom, setPostZoom] = useState(1);
@@ -57,15 +56,23 @@ function App() {
   const [savedPosts, setSavedPosts] = useState([]);
   const [removePhoto, setRemovePhoto] = useState(false);
   const [likedPosts, setLikedPosts] = useState([]);
-  const [loadingLiked, setLoadingLiked] = useState(false);
   const [postVideoSrc, setPostVideoSrc] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
 
-  const fetchFeed = async (requestedMode) => {
+  const handleLogout = useCallback(() => {
+    localStorage.removeItem('token');
+    localStorage.removeItem('email');
+    setToken('');
+    setEmail(''); 
+    setFeed([]);
+    setCurrentView('feed');
+  }, []);
+
+  const fetchFeed = useCallback(async (requestedMode) => {
     try {
       const activeMode = typeof requestedMode === 'string' ? requestedMode : feedMode;
       const isFollowingOnly = activeMode === 'following';
-      const response = await fetch(`https://socialfeed.duckdns.org/api/feed?following_only=${isFollowingOnly}`, {
+      const response = await fetch(`${API_BASE_URL}/feed?following_only=${isFollowingOnly}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.status === 401) {
@@ -78,11 +85,11 @@ function App() {
     } catch (err) {
       setError(err.message);
     }
-  };
+  }, [token, feedMode, handleLogout]);
 
   const fetchProfile = async (userId) => {
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/users/${userId}/profile`, {
+      const response = await fetch(`${API_BASE_URL}/users/${userId}/profile`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (response.status === 401) {
@@ -99,13 +106,13 @@ function App() {
   };
 
   useEffect(() => {
-    if (!searchQuery.trim()) {
-      setSearchResults([]);
-      return;
-    }
     const delayDebounceFn = setTimeout(async () => {
+      if (!searchQuery.trim()) {
+        setSearchResults([]);
+        return;
+      }
       try {
-        const response = await fetch(`https://socialfeed.duckdns.org/api/users/search?q=${searchQuery}`, {
+        const response = await fetch(`${API_BASE_URL}/users/search?q=${searchQuery}`, {
           headers: { 'Authorization': `Bearer ${token}` }
         });
         if (!response.ok) throw new Error('Search failed');
@@ -120,7 +127,7 @@ function App() {
 
   const navigateToMyProfile = async () => {
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/users/search?q=${email}`, {
+      const response = await fetch(`${API_BASE_URL}/users/search?q=${email}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       const data = await response.json();
@@ -153,25 +160,18 @@ function App() {
 
   useEffect(() => {
     if (currentView === 'feed') {
-      fetchFeed();
+      const timer = setTimeout(() => {
+        fetchFeed();
+      }, 0);
+      return () => clearTimeout(timer);
     }
-  }, [token, currentView]);
-
-  const handleLogout = () => {
-    localStorage.removeItem('token');
-    localStorage.removeItem('email');
-    setToken('');
-    setEmail(''); 
-    setFeed([]);
-    setCurrentView('feed');
-  };
+  }, [currentView, fetchFeed]);
 
   useEffect(() => {
     if (profileTab === 'liked' && viewedUser?.email === email && likedPosts.length === 0) {
       const fetchLikedPosts = async () => {
-        setLoadingLiked(true);
         try {
-          const response = await fetch('https://socialfeed.duckdns.org/api/users/me/liked-posts', {
+          const response = await fetch(`${API_BASE_URL}/users/me/liked-posts`, {
             headers: { 'Authorization': `Bearer ${token}` }
           });
           if (response.ok) {
@@ -180,13 +180,11 @@ function App() {
           }
         } catch (error) {
           console.error("Error fetching liked posts:", error);
-        } finally {
-          setLoadingLiked(false);
         }
       };
       fetchLikedPosts();
     }
-  }, [profileTab, email, viewedUser, token]);
+  }, [profileTab, email, viewedUser, token, likedPosts.length]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -195,7 +193,7 @@ function App() {
     formData.append('username', email);
     formData.append('password', password);
     try {
-      const response = await fetch('https://socialfeed.duckdns.org/api/auth/jwt/login', {
+      const response = await fetch(`${API_BASE_URL}/auth/jwt/login`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
         body: formData
@@ -214,7 +212,7 @@ function App() {
     e.preventDefault();
     setError('');
     try {
-      const response = await fetch('https://socialfeed.duckdns.org/api/auth/register', {
+      const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, password })
@@ -251,7 +249,7 @@ function App() {
       const uploadData = new FormData();
       uploadData.append('caption', caption || '');
       uploadData.append('file', finalFile);
-      const response = await fetch('https://socialfeed.duckdns.org/api/upload', {
+      const response = await fetch(`${API_BASE_URL}/upload`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` },
         body: uploadData
@@ -264,7 +262,7 @@ function App() {
       setSelectedFile(null);
       setPostImageSrc(null); 
       setPostVideoSrc(null);
-      setFileKey(Date.now()); 
+      setFileKey(k => k + 1); 
       if (currentView === 'feed') fetchFeed();
       if (currentView === 'profile' && viewedUser) fetchProfile(viewedUser.id);
     } catch (err) {
@@ -308,7 +306,7 @@ function App() {
           return updatedPosts.filter(post => post.is_liked === true);
         });
       }
-      const response = await fetch(`https://socialfeed.duckdns.org/api/posts/${postId}/like`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/like`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -320,7 +318,7 @@ function App() {
 
   const handleFollowToggle = async (targetUserId) => {
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/users/${targetUserId}/follow`, {
+      const response = await fetch(`${API_BASE_URL}/users/${targetUserId}/follow`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -376,7 +374,7 @@ function App() {
     const text = commentInputs[postId];
     if (!text || !text.trim()) return;
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/posts/${postId}/comments`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ text })
@@ -421,7 +419,7 @@ function App() {
       return;
     }
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/posts/${postId}/comments`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Failed to fetch comments');
@@ -435,7 +433,7 @@ function App() {
 
   const fetchSavedPosts = async () => {
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/users/me/saved`, {
+      const response = await fetch(`${API_BASE_URL}/users/me/saved`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Failed to fetch saved posts');
@@ -461,7 +459,7 @@ function App() {
       if (typeof setUserPosts === 'function') setUserPosts(updatePostState);
       if (typeof setLikedPosts === 'function') setLikedPosts(updatePostState);
       if (typeof setSavedPosts === 'function') setSavedPosts(updatePostState);
-      const response = await fetch(`https://socialfeed.duckdns.org/api/posts/${postId}/save`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/save`, {
         method: 'POST',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -500,7 +498,7 @@ function App() {
       if (typeof setSavedPosts === 'function') setSavedPosts(decrementCommentCount);
       if (typeof setLikedPosts === 'function') setLikedPosts(decrementCommentCount); 
       
-      const response = await fetch(`https://socialfeed.duckdns.org/api/comments/${commentId}`, {
+      const response = await fetch(`${API_BASE_URL}/comments/${commentId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -512,7 +510,7 @@ function App() {
 
   const handleViewLikers = async (postId) => {
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/posts/${postId}/likes`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}/likes`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error('Failed to fetch likers');
@@ -527,7 +525,7 @@ function App() {
   const handleDeletePost = async (postId) => {
     if (!window.confirm("Are you sure you want to delete this post?")) return;
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/posts/${postId}`, {
+      const response = await fetch(`${API_BASE_URL}/posts/${postId}`, {
         method: 'DELETE',
         headers: { 'Authorization': `Bearer ${token}` }
       });
@@ -554,7 +552,7 @@ function App() {
     if (finalFile) formData.append('file', finalFile);
     formData.append('remove_photo', removePhoto ? 'true' : 'false');
     try {
-      const response = await fetch('https://socialfeed.duckdns.org/api/users/me/profile', {
+      const response = await fetch(`${API_BASE_URL}/users/me/profile`, {
         method: 'PATCH',
         headers: { 'Authorization': `Bearer ${token}` },
         body: formData
@@ -579,7 +577,7 @@ function App() {
   const handleViewFollows = async (type) => {
     if (viewedUser.email !== email) return;
     try {
-      const response = await fetch(`https://socialfeed.duckdns.org/api/users/${viewedUser.id}/${type}`, {
+      const response = await fetch(`${API_BASE_URL}/users/${viewedUser.id}/${type}`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
       if (!response.ok) throw new Error(`Failed to fetch ${type}`);
@@ -595,19 +593,14 @@ function App() {
   const onFileChange = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      setSelectedFile(file);
-      if (file.type.startsWith('video/')) {
-        const videoUrl = URL.createObjectURL(file);
-        setVideoSrc(videoUrl); 
-        setImageSrc(null);    
-        setShowVideoModal(true); 
+      if (!file.type.startsWith('image/')) {
+        setError('Please select an image file for your profile avatar.');
         return;
       }
+      setSelectedFile(file);
       const reader = new FileReader();
       reader.addEventListener('load', () => {
         setImageSrc(reader.result);
-        setVideoSrc(null); 
-        setShowCropModal(true); 
       });
       reader.readAsDataURL(file);
     }

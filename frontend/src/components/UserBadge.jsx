@@ -1,5 +1,3 @@
-import React from 'react';
-
 const UserBadge = ({ userObj, email, showFollowButton = true, navigateToProfile, handleFollowToggle }) => {
   return (
     <span className="user-badge">

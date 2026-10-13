@@ -1,4 +1,3 @@
-import React from 'react';
 import PostCard from '../components/PostCard';
 import ProfileAvatar from '../components/ProfileAvatar';
 

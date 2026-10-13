@@ -4,8 +4,44 @@ on:
   workflow_dispatch: 
 
 jobs:
+  test:
+    name: Run Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install backend dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pytest-asyncio pytest-cov httpx
+
+      - name: Run Backend Tests
+        run: |
+          pytest --cov=backend --cov-report=term-missing --cov-fail-under=70
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install frontend dependencies
+        working-directory: ./frontend
+        run: npm ci || npm install
+
+      - name: Run Frontend Tests
+        working-directory: ./frontend
+        run: npm test
+
   deploy:
     name: Deploy Application
+    needs: test
     runs-on: ubuntu-latest
 
     steps:

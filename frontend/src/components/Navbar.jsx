@@ -1,5 +1,3 @@
-import React from 'react';
-
 const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLogout }) => {
   return (
     <nav className="navbar">

@@ -172,6 +172,38 @@ npm run build
 Pop-Location
 ```
 
+## Running Tests
+
+### Backend Tests (pytest)
+Run the backend unit and route tests with `pytest`:
+
+```powershell
+# Run all backend tests
+pytest
+
+# Run tests with coverage reporting
+pytest --cov=backend --cov-report=term-missing
+
+# Run tests requiring minimum 70% coverage
+pytest --cov=backend --cov-report=term-missing --cov-fail-under=70
+```
+
+### Frontend Tests (Vitest + React Testing Library)
+Run the frontend unit, component, and page tests with `vitest`:
+
+```powershell
+Set-Location .\frontend
+
+# Run all tests once
+npm test
+
+# Run tests in interactive watch mode
+npm run test:watch
+
+# Run tests with coverage report
+npm run test:coverage
+```
+
 ## Infrastructure & CI/CD Strategy
 
 ### Terraform

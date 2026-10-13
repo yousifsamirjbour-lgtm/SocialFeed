@@ -28,15 +28,15 @@ class User(SQLAlchemyBaseUserTableUUID, Base):
 class Like(Base):
     __tablename__ = "likes"
     
-    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
     post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
 class Follow(Base):
     __tablename__ = "follows"
     
-    follower_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
-    followed_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    follower_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    followed_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)) 
 
 class post(Base): 
@@ -49,7 +49,7 @@ class post(Base):
     file_name = Column(String, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     
-    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     
     owner = relationship("User", back_populates="posts")
     likes = relationship("Like", cascade="all, delete-orphan")
@@ -76,7 +76,7 @@ class Comment(Base):
 class SavedPost(Base):
     __tablename__ = "saved_posts"
     
-    user_id = Column(Uuid, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
