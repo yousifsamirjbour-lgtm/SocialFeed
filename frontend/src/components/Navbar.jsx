@@ -1,6 +1,6 @@
-const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLogout }) => {
+const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLogout, currentUserName }) => {
   return (
-    <nav className="navbar">
+    <nav className="navbar" aria-label="Main Navigation">
       <h2 className="nav-logo" style={{ cursor: 'pointer' }} onClick={navigateToFeed}>
         SocialFeed 
       </h2>
@@ -9,36 +9,54 @@ const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLog
         <button 
           onClick={navigateToMyProfile} 
           className="nav-action-btn"
-          title="Profile"
+          title={currentUserName || "Profile"}
+          aria-label={currentUserName || "Profile"}
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-btn-icon">
             <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path>
             <circle cx="12" cy="7" r="4"></circle>
           </svg>
-          Profile
+          <span className="nav-btn-text">{currentUserName || 'Profile'}</span>
         </button>
           
         <button 
           onClick={() => setCurrentView('search')} 
           className="nav-action-btn"
           title="Find Users"
+          aria-label="Find Users"
         >
-          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ marginRight: '6px', verticalAlign: 'middle' }}>
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-btn-icon">
             <circle cx="11" cy="11" r="8"></circle>
             <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
           </svg>
-          Find Users
+          <span className="nav-btn-text">Find Users</span>
         </button>
 
         <button
           onClick={() => setCurrentView('agent-search')}
           className="nav-action-btn"
-          title="Web Search"
+          title="AI Web Search"
+          aria-label="AI Web Search"
         >
-          AI Web Search
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-btn-icon">
+            <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
+          </svg>
+          <span className="nav-btn-text">AI Web Search</span>
         </button>
           
-        <button onClick={handleLogout} className="logout-btn">Logout</button>
+        <button 
+          onClick={handleLogout} 
+          className="logout-btn"
+          title="Logout"
+          aria-label="Logout"
+        >
+          <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="logout-btn-icon">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
+          </svg>
+          <span className="nav-btn-text">Logout</span>
+        </button>
       </div>
     </nav>
   );

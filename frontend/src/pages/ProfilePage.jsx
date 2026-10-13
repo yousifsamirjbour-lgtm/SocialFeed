@@ -1,8 +1,10 @@
 import PostCard from '../components/PostCard';
 import ProfileAvatar from '../components/ProfileAvatar';
+import UserName from '../components/UserName';
+import { isCurrentUser } from '../utils/user';
 
 const ProfilePage = ({
-  viewedUser, email, navigateToFeed, handleFollowToggle,
+  viewedUser, email, currentUserId, navigateToFeed, handleFollowToggle,
   setEditBio, setShowEditProfileModal, userPosts, handleViewFollows,
   profileTab, setProfileTab, fetchSavedPosts, savedPosts, likedPosts,
   
@@ -11,10 +13,12 @@ const ProfilePage = ({
   handleDeletePost, handleLikeToggle, handleViewLikers, handleSaveToggle,
   handleToggleComments, handleDeleteComment, handleCommentSubmit, navigateToProfile
 }) => {
+  const isOwnProfile = isCurrentUser(viewedUser, currentUserId, email);
+
   // Helper to render the shared PostCard with all necessary props
   const renderProfilePost = (post) => (
     <PostCard 
-      key={post.id} post={post} email={email}
+      key={post.id} post={post} email={email} currentUserId={currentUserId}
       loadedComments={loadedComments} showComments={showComments}
       commentInputs={commentInputs} setCommentInputs={setCommentInputs}
       handleDeletePost={handleDeletePost} handleLikeToggle={handleLikeToggle}
@@ -35,8 +39,8 @@ const ProfilePage = ({
         </div>
 
         <div className="profile-title-row">
-          <h2 className="profile-username">{viewedUser.email}</h2>
-          {viewedUser.email !== email ? (
+          <h2 className="profile-username"><UserName user={viewedUser} /></h2>
+          {!isOwnProfile ? (
             <button 
               onClick={() => handleFollowToggle(viewedUser.id)}
               className={`auth-button profile-action-btn ${viewedUser.is_following ? 'unfollow-active' : ''}`}
@@ -59,16 +63,16 @@ const ProfilePage = ({
         
         <div className="profile-stats">
           <div className="stat-box"><span className="stat-number">{userPosts.length}</span> posts</div>
-          <div className={`stat-box ${viewedUser.email === email ? 'clickable-stat' : ''}`} onClick={() => viewedUser.email === email && handleViewFollows('followers')}>
+          <div className={`stat-box ${isOwnProfile ? 'clickable-stat' : ''}`} onClick={() => isOwnProfile && handleViewFollows('followers')}>
             <span className="stat-number">{viewedUser.followers_count || 0}</span> followers
           </div>
-          <div className={`stat-box ${viewedUser.email === email ? 'clickable-stat' : ''}`} onClick={() => viewedUser.email === email && handleViewFollows('following')}>
+          <div className={`stat-box ${isOwnProfile ? 'clickable-stat' : ''}`} onClick={() => isOwnProfile && handleViewFollows('following')}>
             <span className="stat-number">{viewedUser.following_count || 0}</span> following
           </div>
         </div>
       </div>
 
-      {viewedUser.email === email && (
+      {isOwnProfile && (
         <div className="profile-tabs-container">
           <button className={`profile-tab ${profileTab === 'posts' ? 'active' : ''}`} onClick={() => setProfileTab('posts')}>Posts</button>
           <button className={`profile-tab ${profileTab === 'saved' ? 'active' : ''}`} onClick={() => { setProfileTab('saved'); fetchSavedPosts(); }}>Saved</button>

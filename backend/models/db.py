@@ -11,14 +11,16 @@ from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID, SQLAlchemyU
 import os
 from dotenv import load_dotenv
 
+load_dotenv(dotenv_path="backend/.env")
 load_dotenv()
-DATABASE_URL = os.getenv("DATABASE_URL")
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql+asyncpg://postgres:2003@localhost:5432/socialfeed")
 class Base(DeclarativeBase):
     pass
 
 class User(SQLAlchemyBaseUserTableUUID, Base):
     __tablename__ = "users"  # Changed from "user" to avoid PostgreSQL reserved keyword crash
     
+    name = Column(String(50), nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
     posts = relationship("post", back_populates="owner") # Reverted to lowercase "post"
     comments = relationship("Comment", back_populates="author", cascade="all, delete-orphan")

@@ -40,9 +40,10 @@ async def test_get_all_users(client, test_user, test_user_2):
     assert res.status_code == 200
     users = res.json()
     assert len(users) >= 2
-    emails = [u["email"] for u in users]
-    assert test_user.email in emails
-    assert test_user_2.email in emails
+    names = [u["name"] for u in users]
+    assert test_user.name in names
+    assert test_user_2.name in names
+    assert "email" not in users[0]
 
 @pytest.mark.asyncio
 async def test_get_user_profile(client, test_user, test_user_2, auth_headers, sample_post):
@@ -50,7 +51,8 @@ async def test_get_user_profile(client, test_user, test_user_2, auth_headers, sa
     res = await client.get(f"/users/{test_user.id}/profile", headers=auth_headers)
     assert res.status_code == 200
     data = res.json()
-    assert data["email"] == test_user.email
+    assert data["name"] == test_user.name
+    assert "email" not in data
     assert data["followers_count"] == 0
     assert data["following_count"] == 0
     assert "posts" in data
@@ -70,12 +72,13 @@ async def test_search_users(client, test_user, auth_headers):
     assert res_empty.status_code == 200
     assert res_empty.json() == []
 
-    # Valid search query
-    res = await client.get("/users/search?q=testuser", headers=auth_headers)
+    # Valid search query by name
+    res = await client.get("/users/search?q=Test", headers=auth_headers)
     assert res.status_code == 200
     results = res.json()
     assert len(results) >= 1
-    assert any(u["email"] == test_user.email for u in results)
+    assert any(u["name"] == test_user.name for u in results)
+    assert "email" not in results[0]
 
     # Unauthorized
     res_unauth = await client.get("/users/search?q=test")
@@ -94,6 +97,8 @@ async def test_get_followers_and_following(client, db_session, test_user, test_u
     followers = res_followers.json()
     assert len(followers) == 1
     assert followers[0]["id"] == str(test_user.id)
+    assert followers[0]["name"] == test_user.name
+    assert "email" not in followers[0]
 
     # Get following of test_user
     res_following = await client.get(f"/users/{test_user.id}/following", headers=auth_headers)
@@ -101,6 +106,8 @@ async def test_get_followers_and_following(client, db_session, test_user, test_u
     following = res_following.json()
     assert len(following) == 1
     assert following[0]["id"] == str(test_user_2.id)
+    assert following[0]["name"] == test_user_2.name
+    assert "email" not in following[0]
 
     # Empty followers
     res_empty = await client.get(f"/users/{test_user.id}/followers", headers=auth_headers)
@@ -124,6 +131,8 @@ async def test_get_post_likers(client, db_session, test_user, sample_post, auth_
     likers = res.json()
     assert len(likers) == 1
     assert likers[0]["id"] == str(test_user.id)
+    assert likers[0]["name"] == test_user.name
+    assert "email" not in likers[0]
 
     # Post not found
     res_404 = await client.get(f"/posts/{uuid.uuid4()}/likes", headers=auth_headers)

@@ -1,4 +1,5 @@
 const AuthPage = ({
+  name = '', setName = () => {},
   email, setEmail,
   password, setPassword,
   isRegistering, setIsRegistering,
@@ -15,6 +16,18 @@ const AuthPage = ({
         {successMessage && <div className="success-msg">{successMessage}</div>}
 
         <form onSubmit={isRegistering ? handleRegister : handleLogin} className="auth-form">
+          {isRegistering && (
+            <input 
+              type="text" 
+              placeholder="Full Name"
+              value={name} 
+              onChange={(e) => setName(e.target.value)} 
+              required
+              minLength={2}
+              maxLength={50}
+              className="auth-input"
+            />
+          )}
           <input 
             type="email" 
             placeholder="Email address"

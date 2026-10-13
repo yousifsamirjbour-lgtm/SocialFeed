@@ -8,34 +8,35 @@ describe('SearchPage', () => {
     setSearchQuery: vi.fn(),
     searchResults: [],
     email: 'me@example.com',
+    currentUserId: 'my-id',
     navigateToProfile: vi.fn(),
     handleFollowToggle: vi.fn()
   };
 
-  it('renders search input', () => {
+  it('renders search input for users by name', () => {
     render(<SearchPage {...defaultProps} />);
 
-    const input = screen.getByPlaceholderText('Search users by email...');
+    const input = screen.getByPlaceholderText('Search users by name...');
     expect(input).toBeInTheDocument();
   });
 
   it('triggers setSearchQuery on input change', () => {
     render(<SearchPage {...defaultProps} />);
 
-    const input = screen.getByPlaceholderText('Search users by email...');
+    const input = screen.getByPlaceholderText('Search users by name...');
     fireEvent.change(input, { target: { value: 'alice' } });
     expect(defaultProps.setSearchQuery).toHaveBeenCalledWith('alice');
   });
 
-  it('renders search results when matches exist', () => {
+  it('renders search results by display name when matches exist', () => {
     const results = [
-      { id: 'u1', email: 'alice@example.com', is_following: false },
-      { id: 'u2', email: 'alicia@example.com', is_following: true }
+      { id: 'u1', name: 'Alice Walker', is_following: false },
+      { id: 'u2', name: 'Alicia Keys', is_following: true }
     ];
     render(<SearchPage {...defaultProps} searchQuery="ali" searchResults={results} />);
 
-    expect(screen.getByText('alice@example.com')).toBeInTheDocument();
-    expect(screen.getByText('alicia@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Alice Walker')).toBeInTheDocument();
+    expect(screen.getByText('Alicia Keys')).toBeInTheDocument();
   });
 
   it('renders "No users found." message when search returns no matches', () => {

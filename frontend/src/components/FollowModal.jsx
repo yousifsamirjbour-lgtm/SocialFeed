@@ -1,6 +1,6 @@
 import UserBadge from './UserBadge';
 
-const FollowModal = ({ setShowFollowModal, followModalType, followList, email, navigateToProfile, handleFollowToggle }) => {
+const FollowModal = ({ setShowFollowModal, followModalType, followList, email, currentUserId, navigateToProfile, handleFollowToggle }) => {
   return (
     <div className="modal-overlay" onClick={() => setShowFollowModal(false)}>
       <div className="modal-content" onClick={e => e.stopPropagation()}>
@@ -17,6 +17,7 @@ const FollowModal = ({ setShowFollowModal, followModalType, followList, email, n
                 <UserBadge 
                   userObj={user} 
                   email={email} 
+                  currentUserId={currentUserId}
                   navigateToProfile={navigateToProfile} 
                   handleFollowToggle={handleFollowToggle} 
                 />

@@ -4,8 +4,8 @@ import FollowModal from '../FollowModal';
 
 describe('FollowModal Component', () => {
   const mockUsers = [
-    { id: 'u1', email: 'user1@example.com', is_following: true },
-    { id: 'u2', email: 'user2@example.com', is_following: false }
+    { id: 'u1', name: 'User One', is_following: true },
+    { id: 'u2', name: 'User Two', is_following: false }
   ];
 
   const defaultProps = {
@@ -13,16 +13,17 @@ describe('FollowModal Component', () => {
     followModalType: 'followers',
     followList: mockUsers,
     email: 'me@example.com',
+    currentUserId: 'my-id',
     navigateToProfile: vi.fn(),
     handleFollowToggle: vi.fn()
   };
 
-  it('renders modal header and list of users', () => {
+  it('renders modal header and list of users by name', () => {
     render(<FollowModal {...defaultProps} />);
 
     expect(screen.getByText('followers')).toBeInTheDocument();
-    expect(screen.getByText('user1@example.com')).toBeInTheDocument();
-    expect(screen.getByText('user2@example.com')).toBeInTheDocument();
+    expect(screen.getByText('User One')).toBeInTheDocument();
+    expect(screen.getByText('User Two')).toBeInTheDocument();
   });
 
   it('renders empty state when list is empty', () => {

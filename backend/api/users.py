@@ -93,37 +93,28 @@ async def get_liked_posts_alias(
     )
     return await fetch_decorated_posts(session, user.id, base_query)
 
-@router.get("/users", response_model=List[UserRead])
+@router.get("/users/me", response_model=UserRead)
+async def get_current_user_profile(
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session)
+):
+    followers_query = select(func.count()).where(Follow.followed_id == user.id)
+    followers_count = (await session.execute(followers_query)).scalar() or 0
+    
+    following_query = select(func.count()).where(Follow.follower_id == user.id)
+    following_count = (await session.execute(following_query)).scalar() or 0
+    
+    user.followers_count = followers_count
+    user.following_count = following_count
+    return user
+
+@router.get("/users", response_model=List[UserFeedInfo])
 async def get_all_users(
     session: AsyncSession = Depends(get_async_session)
 ):
-    followers_sq = (
-        select(func.count(Follow.follower_id))
-        .where(Follow.followed_id == User.id)
-        .scalar_subquery()
-    )
-    following_sq = (
-        select(func.count(Follow.followed_id))
-        .where(Follow.follower_id == User.id)
-        .scalar_subquery()
-    )
-
-    query = select(
-        User,
-        followers_sq.label("followers_count"),
-        following_sq.label("following_count")
-    )
-
+    query = select(User)
     result = await session.execute(query)
-    rows = result.all()
-
-    final_users = []
-    for user_obj, followers_c, following_c in rows:
-        user_obj.followers_count = followers_c
-        user_obj.following_count = following_c
-        final_users.append(user_obj)
-
-    return final_users
+    return result.scalars().all()
 
 @router.get("/users/{target_user_id}/profile", response_model=UserProfileResponse)
 async def get_user_profile(
@@ -138,10 +129,10 @@ async def get_user_profile(
         raise HTTPException(status_code=404, detail="User not found")
         
     followers_query = select(func.count()).where(Follow.followed_id == target_user_id)
-    followers_count = (await session.execute(followers_query)).scalar()
+    followers_count = (await session.execute(followers_query)).scalar() or 0
     
     following_query = select(func.count()).where(Follow.follower_id == target_user_id)
-    following_count = (await session.execute(following_query)).scalar()
+    following_count = (await session.execute(following_query)).scalar() or 0
     
     follow_check_query = select(Follow).where(
         Follow.follower_id == user.id,
@@ -153,7 +144,10 @@ async def get_user_profile(
     decorated_posts = await fetch_decorated_posts(session, user.id, post_query)
     
     return {
-        **profile_user.__dict__, 
+        "id": profile_user.id,
+        "name": profile_user.name,
+        "bio": profile_user.bio,
+        "profile_picture_url": profile_user.profile_picture_url,
         "followers_count": followers_count,
         "following_count": following_count,
         "is_following": is_following_target,
@@ -169,8 +163,8 @@ async def search_users(
     if not q.strip():
         return []
         
-    search_query = f"%{q}%"
-    query = select(User).where(User.email.ilike(search_query)).limit(20)
+    search_query = f"%{q.strip()}%"
+    query = select(User).where(User.name.ilike(search_query)).limit(20)
     
     result = await session.execute(query)
     users = result.scalars().all()

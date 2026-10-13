@@ -1,25 +1,39 @@
 import uuid
 from datetime import datetime
-from pydantic import BaseModel
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from fastapi_users import schemas
 from typing import List, Optional
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
+    name: str
     followers_count: int = 0
     following_count: int = 0
+    bio: Optional[str] = None
+    profile_picture_url: Optional[str] = None
 
 class UserCreate(schemas.BaseUserCreate):
-    pass
+    name: str = Field(..., min_length=2, max_length=50)
+
+    @field_validator("name")
+    @classmethod
+    def validate_name(cls, v: str) -> str:
+        if not isinstance(v, str):
+            raise ValueError("Name must be a string")
+        cleaned = v.strip()
+        if len(cleaned) < 2 or len(cleaned) > 50:
+            raise ValueError("Name must be between 2 and 50 characters")
+        return cleaned
 
 class UserUpdate(schemas.BaseUserUpdate):
-    pass
+    name: Optional[str] = Field(None, min_length=2, max_length=50)
 
 class UserFeedInfo(BaseModel):
     id: uuid.UUID
-    email: str
+    name: str
+    profile_picture_url: Optional[str] = None
     is_following: bool = False
-    class Config:
-        from_attributes = True
+
+    model_config = ConfigDict(from_attributes=True)
 
 class postresponse(BaseModel):
     id: uuid.UUID
@@ -35,12 +49,11 @@ class postresponse(BaseModel):
     is_saved: Optional[bool] = False
     owner: UserFeedInfo 
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class UserProfileResponse(BaseModel):
     id: uuid.UUID
-    email: str
+    name: str
     followers_count: int = 0
     following_count: int = 0
     is_following: bool = False
@@ -48,8 +61,7 @@ class UserProfileResponse(BaseModel):
     profile_picture_url: str | None = None
     posts: List[postresponse] = []
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class CommentCreate(BaseModel):
     text: str
@@ -62,13 +74,11 @@ class CommentResponse(BaseModel):
     post_id: uuid.UUID
     author: UserFeedInfo 
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)
 
 class ProfileUpdateResponse(BaseModel):
     message: str
     bio: str | None = None
     profile_picture_url: str | None = None
 
-    class Config:
-        from_attributes = True
+    model_config = ConfigDict(from_attributes=True)

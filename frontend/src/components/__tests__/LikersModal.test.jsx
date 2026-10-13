@@ -4,24 +4,25 @@ import LikersModal from '../LikersModal';
 
 describe('LikersModal Component', () => {
   const mockLikers = [
-    { id: 'u1', email: 'liker1@example.com', is_following: false },
-    { id: 'u2', email: 'liker2@example.com', is_following: true }
+    { id: 'u1', name: 'Liker One', is_following: false },
+    { id: 'u2', name: 'Liker Two', is_following: true }
   ];
 
   const defaultProps = {
     setShowLikersModal: vi.fn(),
     currentLikers: mockLikers,
     email: 'me@example.com',
+    currentUserId: 'my-id',
     navigateToProfile: vi.fn(),
     handleFollowToggle: vi.fn()
   };
 
-  it('renders title and liker list', () => {
+  it('renders title and liker list by name', () => {
     render(<LikersModal {...defaultProps} />);
 
     expect(screen.getByText('Likes')).toBeInTheDocument();
-    expect(screen.getByText('liker1@example.com')).toBeInTheDocument();
-    expect(screen.getByText('liker2@example.com')).toBeInTheDocument();
+    expect(screen.getByText('Liker One')).toBeInTheDocument();
+    expect(screen.getByText('Liker Two')).toBeInTheDocument();
   });
 
   it('renders empty state when likers list is empty', () => {

@@ -14,10 +14,14 @@ import Navbar from './components/Navbar';
 import LikersModal from './components/LikersModal';
 import FollowModal from './components/FollowModal';
 import EditProfileModal from './components/EditProfileModal';
+import { isCurrentUser } from './utils/user';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
   const [email, setEmail] = useState(localStorage.getItem('email') || '');
+  const [name, setName] = useState('');
+  const [currentUserId, setCurrentUserId] = useState(localStorage.getItem('userId') || '');
+  const [currentUserName, setCurrentUserName] = useState(localStorage.getItem('name') || '');
   const [password, setPassword] = useState('');
   const [isRegistering, setIsRegistering] = useState(false);
   const [feed, setFeed] = useState([]);
@@ -62,8 +66,13 @@ function App() {
   const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
     localStorage.removeItem('email');
+    localStorage.removeItem('userId');
+    localStorage.removeItem('name');
     setToken('');
     setEmail(''); 
+    setName('');
+    setCurrentUserId('');
+    setCurrentUserName('');
     setFeed([]);
     setCurrentView('feed');
   }, []);
@@ -125,14 +134,37 @@ function App() {
     return () => clearTimeout(delayDebounceFn);
   }, [searchQuery, token]);
 
+  useEffect(() => {
+    if (token) {
+      fetch(`${API_BASE_URL}/users/me`, {
+        headers: { 'Authorization': `Bearer ${token}` }
+      })
+      .then(res => res.ok ? res.json() : null)
+      .then(userData => {
+        if (userData) {
+          setCurrentUserId(userData.id);
+          setCurrentUserName(userData.name);
+          localStorage.setItem('userId', userData.id);
+          localStorage.setItem('name', userData.name);
+        }
+      })
+      .catch(err => console.error("Error loading user profile:", err));
+    }
+  }, [token]);
+
   const navigateToMyProfile = async () => {
     try {
-      const response = await fetch(`${API_BASE_URL}/users/search?q=${email}`, {
+      if (currentUserId) {
+        navigateToProfile(currentUserId);
+        return;
+      }
+      const response = await fetch(`${API_BASE_URL}/users/me`, {
         headers: { 'Authorization': `Bearer ${token}` }
       });
-      const data = await response.json();
-      const me = data.find(user => user.email === email);
-      if (me) {
+      if (response.ok) {
+        const me = await response.json();
+        setCurrentUserId(me.id);
+        setCurrentUserName(me.name);
         navigateToProfile(me.id);
       }
     } catch (err) {
@@ -168,7 +200,7 @@ function App() {
   }, [currentView, fetchFeed]);
 
   useEffect(() => {
-    if (profileTab === 'liked' && viewedUser?.email === email && likedPosts.length === 0) {
+    if (profileTab === 'liked' && isCurrentUser(viewedUser, currentUserId, email) && likedPosts.length === 0) {
       const fetchLikedPosts = async () => {
         try {
           const response = await fetch(`${API_BASE_URL}/users/me/liked-posts`, {
@@ -184,7 +216,7 @@ function App() {
       };
       fetchLikedPosts();
     }
-  }, [profileTab, email, viewedUser, token, likedPosts.length]);
+  }, [profileTab, email, viewedUser, currentUserId, token, likedPosts.length]);
 
   const handleLogin = async (e) => {
     e.preventDefault();
@@ -203,6 +235,21 @@ function App() {
       localStorage.setItem('token', data.access_token);
       localStorage.setItem('email', email);
       setToken(data.access_token);
+
+      try {
+        const meRes = await fetch(`${API_BASE_URL}/users/me`, {
+          headers: { 'Authorization': `Bearer ${data.access_token}` }
+        });
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          setCurrentUserId(meData.id);
+          setCurrentUserName(meData.name);
+          localStorage.setItem('userId', meData.id);
+          localStorage.setItem('name', meData.name);
+        }
+      } catch (meErr) {
+        console.error("Failed to load user profile on login:", meErr);
+      }
     } catch (err) {
       setError(err.message);
     }
@@ -211,11 +258,16 @@ function App() {
   const handleRegister = async (e) => {
     e.preventDefault();
     setError('');
+    const trimmedName = name.trim();
+    if (trimmedName.length < 2 || trimmedName.length > 50) {
+      setError('Full Name must be between 2 and 50 characters');
+      return;
+    }
     try {
       const response = await fetch(`${API_BASE_URL}/auth/register`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password })
+        body: JSON.stringify({ name: trimmedName, email, password })
       });
       if (!response.ok) {
         const errData = await response.json();
@@ -223,6 +275,7 @@ function App() {
       }
       setSuccessMessage('Registration successful! Please log in.');
       setIsRegistering(false);
+      setName('');
     } catch (err) {
       setError(err.message);
     }
@@ -575,7 +628,7 @@ function App() {
   };
 
   const handleViewFollows = async (type) => {
-    if (viewedUser.email !== email) return;
+    if (!isCurrentUser(viewedUser, currentUserId, email)) return;
     try {
       const response = await fetch(`${API_BASE_URL}/users/${viewedUser.id}/${type}`, {
         headers: { 'Authorization': `Bearer ${token}` }
@@ -657,6 +710,7 @@ function App() {
   if (!token) {
     return (
       <AuthPage 
+        name={name} setName={setName}
         email={email} setEmail={setEmail} password={password} setPassword={setPassword}
         isRegistering={isRegistering} setIsRegistering={setIsRegistering}
         error={error} setError={setError} successMessage={successMessage} setSuccessMessage={setSuccessMessage}
@@ -667,10 +721,16 @@ function App() {
 
   return (
     <div>
-      <Navbar navigateToFeed={navigateToFeed} navigateToMyProfile={navigateToMyProfile} setCurrentView={setCurrentView} handleLogout={handleLogout} />
+      <Navbar 
+        navigateToFeed={navigateToFeed} 
+        navigateToMyProfile={navigateToMyProfile} 
+        setCurrentView={setCurrentView} 
+        handleLogout={handleLogout} 
+        currentUserName={currentUserName}
+      />
 
       <div className="main-feed-container">
-        {error && <div className="error-msg" style={{ width: '470px' }}>{error}</div>}
+        {error && <div className="error-msg" style={{ width: '100%', maxWidth: '470px', boxSizing: 'border-box' }}>{error}</div>}
 
         {currentView === 'feed' && (
           <FeedPage 
@@ -680,7 +740,7 @@ function App() {
             selectedFile={selectedFile} setSelectedFile={setSelectedFile} postCrop={postCrop} setPostCrop={setPostCrop}
             postZoom={postZoom} setPostZoom={setPostZoom} postAspect={postAspect} setPostAspect={setPostAspect}
             onPostCropComplete={onPostCropComplete} onPostFileChange={onPostFileChange} fileKey={fileKey}
-            uploading={uploading} setUploading={setUploading} email={email} loadedComments={loadedComments} showComments={showComments}
+            uploading={uploading} setUploading={setUploading} email={email} currentUserId={currentUserId} loadedComments={loadedComments} showComments={showComments}
             commentInputs={commentInputs} setCommentInputs={setCommentInputs} handleDeletePost={handleDeletePost} handleLikeToggle={handleLikeToggle}
             handleViewLikers={handleViewLikers} handleSaveToggle={handleSaveToggle} handleToggleComments={handleToggleComments}
             handleDeleteComment={handleDeleteComment} handleCommentSubmit={handleCommentSubmit} navigateToProfile={navigateToProfile}
@@ -690,7 +750,7 @@ function App() {
 
         {currentView === 'profile' && viewedUser && (
           <ProfilePage 
-            viewedUser={viewedUser} email={email} navigateToFeed={navigateToFeed} handleFollowToggle={handleFollowToggle}
+            viewedUser={viewedUser} email={email} currentUserId={currentUserId} navigateToFeed={navigateToFeed} handleFollowToggle={handleFollowToggle}
             setEditBio={setEditBio} setShowEditProfileModal={setShowEditProfileModal} userPosts={userPosts} handleViewFollows={handleViewFollows}
             profileTab={profileTab} setProfileTab={setProfileTab} fetchSavedPosts={fetchSavedPosts} savedPosts={savedPosts} likedPosts={likedPosts}
             loadedComments={loadedComments} showComments={showComments} commentInputs={commentInputs} setCommentInputs={setCommentInputs}
@@ -702,7 +762,7 @@ function App() {
 
         {currentView === 'search' && (
           <SearchPage 
-            searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} email={email}
+            searchQuery={searchQuery} setSearchQuery={setSearchQuery} searchResults={searchResults} email={email} currentUserId={currentUserId}
             navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle}
           />
         )}
@@ -710,8 +770,8 @@ function App() {
         {currentView === 'agent-search' && <SearchAgentPage />}
       </div>
 
-      {showLikersModal && <LikersModal setShowLikersModal={setShowLikersModal} currentLikers={currentLikers} email={email} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />}
-      {showFollowModal && <FollowModal setShowFollowModal={setShowFollowModal} followModalType={followModalType} followList={followList} email={email} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />}
+      {showLikersModal && <LikersModal setShowLikersModal={setShowLikersModal} currentLikers={currentLikers} email={email} currentUserId={currentUserId} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />}
+      {showFollowModal && <FollowModal setShowFollowModal={setShowFollowModal} followModalType={followModalType} followList={followList} email={email} currentUserId={currentUserId} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />}
       {showEditProfileModal && (
         <EditProfileModal 
           setShowEditProfileModal={setShowEditProfileModal} handleEditProfileSubmit={handleEditProfileSubmit} editBio={editBio} setEditBio={setEditBio}

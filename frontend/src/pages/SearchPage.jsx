@@ -5,6 +5,7 @@ const SearchPage = ({
   setSearchQuery,
   searchResults,
   email,
+  currentUserId,
   navigateToProfile,
   handleFollowToggle
 }) => {
@@ -13,7 +14,7 @@ const SearchPage = ({
       <div className="search-form">
         <input 
           type="text" 
-          placeholder="Search users by email..." 
+          placeholder="Search users by name..." 
           value={searchQuery}
           onChange={(e) => setSearchQuery(e.target.value)}
           className="search-input"
@@ -30,6 +31,7 @@ const SearchPage = ({
               <UserBadge 
                 userObj={user} 
                 email={email} 
+                currentUserId={currentUserId}
                 navigateToProfile={navigateToProfile} 
                 handleFollowToggle={handleFollowToggle} 
               />

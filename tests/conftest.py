@@ -94,6 +94,7 @@ async def test_user(db_session):
     user = User(
         id=user_id,
         email="testuser@example.com",
+        name="Test User",
         hashed_password="hashed_test_password",
         is_active=True,
         is_superuser=False,
@@ -111,6 +112,7 @@ async def test_user_2(db_session):
     user = User(
         id=user_id,
         email="otheruser@example.com",
+        name="Other User",
         hashed_password="hashed_other_password",
         is_active=True,
         is_superuser=False,

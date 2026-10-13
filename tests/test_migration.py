@@ -1,0 +1,63 @@
+import sqlite3
+import pytest
+from migrations.run_migration import sanitize_name_from_email, verify_safe_environment, run
+
+def test_sanitize_name_from_email():
+    # Normal email
+    assert sanitize_name_from_email("john.doe@gmail.com") == "john.doe"
+    
+    # Under 2 characters -> padded with underscore
+    assert sanitize_name_from_email("a@gmail.com") == "a_"
+    assert len(sanitize_name_from_email("a@gmail.com")) == 2
+
+    # Over 50 characters -> truncated to 50 characters
+    long_prefix = "a" * 60
+    long_email = f"{long_prefix}@gmail.com"
+    sanitized = sanitize_name_from_email(long_email)
+    assert len(sanitized) == 50
+    assert sanitized == "a" * 50
+
+def test_verify_safe_environment_allows_local_and_aborts_remote():
+    # Localhost and sqlite should pass
+    verify_safe_environment("sqlite+aiosqlite:///test.db")
+    verify_safe_environment("postgresql+asyncpg://postgres:pass@localhost:5432/socialfeed")
+    verify_safe_environment("postgresql+asyncpg://postgres:pass@127.0.0.1:5432/socialfeed")
+
+    # Remote database MUST trigger SystemExit
+    with pytest.raises(SystemExit):
+        verify_safe_environment("postgresql+asyncpg://admin:pass@production.rds.amazonaws.com:5432/socialfeed")
+
+    with pytest.raises(SystemExit):
+        verify_safe_environment("postgresql+asyncpg://admin:pass@13.62.51.232:5432/socialfeed")
+
+@pytest.mark.asyncio
+async def test_migration_execution_on_test_db(tmp_path, monkeypatch):
+    test_db_file = tmp_path / "test_migration.db"
+    db_url = f"sqlite+aiosqlite:///{test_db_file.as_posix()}"
+    monkeypatch.setattr("migrations.run_migration.DATABASE_URL", db_url)
+
+    # Initialize SQLite table with existing users needing backfill
+    conn = sqlite3.connect(test_db_file)
+    conn.execute("CREATE TABLE users (id TEXT PRIMARY KEY, email TEXT, name TEXT)")
+    conn.execute("INSERT INTO users VALUES ('1', 'user1@gmail.com', NULL)")
+    conn.execute("INSERT INTO users VALUES ('2', 'x@gmail.com', '')")
+    conn.execute(f"INSERT INTO users VALUES ('3', '{"b" * 60}@gmail.com', NULL)")
+    conn.commit()
+    conn.close()
+
+    # Run migration
+    await run()
+
+    # Verify backfill results
+    conn = sqlite3.connect(test_db_file)
+    rows = conn.execute("SELECT id, email, name FROM users ORDER BY id").fetchall()
+    conn.close()
+
+    assert len(rows) == 3
+    # user 1: normal
+    assert rows[0][2] == "user1"
+    # user 2: padded from 'x' to 'x_'
+    assert rows[1][2] == "x_"
+    # user 3: truncated to 50 chars
+    assert len(rows[2][2]) == 50
+    assert rows[2][2] == "b" * 50
