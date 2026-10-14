@@ -1,5 +1,6 @@
 import UserBadge from './UserBadge';
 import { isCurrentUser } from '../utils/user';
+import { Sparkles } from 'lucide-react';
 
 const PostCard = ({
   post,
@@ -17,7 +18,8 @@ const PostCard = ({
   handleDeleteComment,
   handleCommentSubmit,
   navigateToProfile,
-  handleFollowToggle
+  handleFollowToggle,
+  onAnalyzePost
 }) => {
   const actualCommentCount = loadedComments[post.id] 
     ? loadedComments[post.id].length 
@@ -87,17 +89,31 @@ const PostCard = ({
             </span>
           </div>
 
-          <button onClick={() => handleSaveToggle(post.id)} className="save-btn">
-            {post.is_saved ? (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-              </svg>
-            ) : (
-              <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
-              </svg>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+            {onAnalyzePost && (
+              <button
+                onClick={() => onAnalyzePost(post)}
+                className="ai-analyze-btn"
+                title="Analyze & Verify with AI Studio"
+                aria-label="Analyze & Verify with AI Studio"
+              >
+                <Sparkles size={13} className="ai-verify-icon" />
+                <span>Verify</span>
+              </button>
             )}
-          </button>
+
+            <button onClick={() => handleSaveToggle(post.id)} className="save-btn">
+              {post.is_saved ? (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+                </svg>
+              ) : (
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="m19 21-7-4-7 4V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16z"/>
+                </svg>
+              )}
+            </button>
+          </div>
         </div>
 
         <div className="post-caption" style={{ display: 'flex', alignItems: 'baseline', gap: '8px' }}>

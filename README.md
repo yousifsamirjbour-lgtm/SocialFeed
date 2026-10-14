@@ -14,9 +14,13 @@ The API is mounted at `/api` for application endpoints, including `POST /api/sea
 - Publish image and video posts, comment, like, save, and delete content.
 - Follow users and browse followers, following lists, and user profiles.
 - Search users by email and view profile posts.
-- Search the web with a LangGraph ReAct agent using Tavily search and a Groq-hosted language model.
-- Render AI responses as GitHub Flavored Markdown, including tables, lists, and links.
-- Open rendered source links in a new tab with `noopener noreferrer` protection.
+- **AI Studio: Research Assistant & Fact-Checker**:
+  - Full LangGraph workflow integrating internal PostgreSQL Full-Text Search with live Tavily web search.
+  - Visible self-correction via an automated "Editor AI" critique loop (max 2 iterations).
+  - Side-by-side "Community vs. Reality" comparison card showing internal discourse vs. verified ground truth.
+  - Automated royalty-free illustration generator (Pollinations.ai) with Cloudinary hosting.
+  - Human-in-the-Loop (HITL) approval step allowing users to inspect, edit, and approve drafts before posting to the public feed.
+  - Strict $0.00 cost guardrails: per-user rate limits, global daily caps, max token limits, and query caching.
 - Upload and crop profile photos; serve uploaded files from the backend.
 
 ## Tech Stack
@@ -53,6 +57,66 @@ The API is mounted at `/api` for application endpoints, including `POST /api/sea
 └── requirements.txt
 ```
 
+## AI Studio: Research Assistant & Fact-Checker
+
+The **AI Studio** is a flagship multi-stage AI feature that bridges internal SocialFeed discussions with verified real-world web truth, generating balanced editorial posts with automated royalty-free illustrations.
+
+### Key Architecture & Pipeline
+
+```mermaid
+flowchart TD
+    UserQuery([User Research Request]) --> Retrieve[1. Retrieve Internal Posts via PostgreSQL FTS]
+    Retrieve --> Grade[2. Grade Relevance with LLM]
+    Grade --> WebSearch[3. Search Web via Tavily for Ground Truth]
+    WebSearch --> Draft[4. Synthesize Draft & Community vs Reality Insights]
+    Draft --> Critique{5. Editor AI Critique Loop}
+    Critique -- "Critique Needs Revision (Max 2 Loops)" --> Draft
+    Critique -- "Approved or Max Iterations Reached" --> MediaDirector[6. Media Director: Prompt Pollinations.ai]
+    MediaDirector --> HITL["Interrupt: Human-in-the-Loop Review (SSE Stream)"]
+    HITL --> UIPreview[User Reviews, Edits Draft & Previews Comparison Card]
+    UIPreview -- User Approves --> Publish[Publish Post to Public Feed with Cloudinary Media]
+    UIPreview -- User Cancels --> Discard[Cancel & Discard Thread]
+```
+
+### Feature Highlights
+
+1. **Hybrid Retrieval (Community + Web)**:
+   - Queries existing SocialFeed posts using PostgreSQL Full-Text Search (`to_tsvector`/`plainto_tsquery`) to establish what our community is discussing.
+   - Evaluates internal relevance with a structured LLM grader.
+   - Retrieves live web sources with Tavily to fact-check claims and supply objective ground truth.
+2. **Visible Self-Correction ("Editor AI")**:
+   - An internal editor critique node reviews synthesized drafts for factual accuracy, neutrality, and clear attribution.
+   - Loops up to 2 times to improve drafts before publishing, displaying a visible warning badge whenever a draft required editorial correction.
+3. **Community vs. Reality Comparison Card**:
+   - Compares internal community perceptions side-by-side with external web facts.
+   - External source citations include proper `target="_blank"` and `rel="noopener noreferrer"` attributes.
+4. **Royalty-Free Media Direction**:
+   - Media Director creates prompt for Pollinations.ai (`https://image.pollinations.ai/prompt/...`), which requires no API key or subscription.
+   - Upon user approval, downloads and uploads image to Cloudinary (or preserves fallback direct link) and publishes post to feed.
+5. **Human-in-the-Loop (HITL) Safety**:
+   - Graph interrupts execution before publishing via LangGraph checkpointing.
+   - Users can edit the generated title/body, toggle image inclusion, and explicitly approve publishing or cancel.
+
+### Cost Architecture & Zero-Cost Free-Tier Guardrails
+
+AI Studio is engineered with strict $0.00 operational guarantees to ensure free tier sustainability:
+
+| Service | Free Tier Allowance | Consumption Per Run | Capacity on Free Tier |
+| --- | --- | --- | --- |
+| **Groq (`openai/gpt-oss-20b`)** | 30 requests / min, 14,400 req / day | 3–5 LLM calls (Grading: ~150 tok, Draft: ~350 tok, Critique: ~200 tok) | > 2,800 runs / day |
+| **Tavily Search** | 1,000 queries / month | 1 search query (max 3–5 curated results) | 1,000 runs / month (~33 runs / day) |
+| **Pollinations.ai** | Unlimited free tier (Open-source AI image endpoint) | 1 image generation call per run | Unlimited |
+| **PostgreSQL FTS** | Native DB engine | 1 FTS query | Unlimited |
+| **Cloudinary** | 25 monthly credits (~25,000 transformations/uploads) | 1 image upload upon user approval (0 on cancel) | ~25,000 approved posts / month |
+
+#### Built-in Guardrails:
+- **Sliding-Window User Rate Limit**: Maximum 5 runs per hour per user (configurable via `AI_STUDIO_USER_RATE_LIMIT_PER_HOUR`).
+- **Global Daily Cap**: Maximum 50 runs per day across the entire platform (configurable via `AI_STUDIO_GLOBAL_DAILY_CAP`).
+- **Iteration Cap**: Maximum 2 critique self-correction loops (`AI_STUDIO_MAX_CRITIQUE_LOOPS`).
+- **Result & Input Caps**: Max 3 web search results, max 500 characters input query.
+- **In-Memory Query Cache**: 5-minute TTL caching identical queries to avoid redundant API consumption.
+- **Prompt Injection Defense**: Untrusted user inputs and retrieved internal posts are sanitized and isolated within XML-style boundary delimiters.
+
 ## Prerequisites
 
 - Python **3.14** for the local environment (`.python-version` and `pyproject.toml`).
@@ -60,7 +124,7 @@ The API is mounted at `/api` for application endpoints, including `POST /api/sea
 - PostgreSQL 15 or later, either installed locally or run with Docker Compose.
 - Docker Engine with the Docker Compose plugin for container workflows.
 - Terraform and AWS credentials for provisioning the configured EC2 resources.
-- Groq and Tavily API credentials to use AI Web Search.
+- Groq and Tavily API credentials to use AI Web Search and AI Studio.
 
 ## Environment Variables
 
@@ -74,14 +138,22 @@ DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:5432/<database>
 # Required by the authentication setup. Generate a long, random value.
 JWT_SECRET_KEY=<your-random-secret>
 
-# Required for AI Web Search.
+# Required for AI Web Search & AI Studio.
 GROQ_API_KEY=<your-groq-api-key>
+GROQ_MODEL=openai/gpt-oss-20b
 TAVILY_API_KEY=<your-tavily-api-key>
 
 # Optional: configure if using Cloudinary-backed media features.
 CLOUDINARY_CLOUD_NAME=<your-cloud-name>
 CLOUDINARY_API_KEY=<your-cloudinary-api-key>
 CLOUDINARY_API_SECRET=<your-cloudinary-api-secret>
+
+# Optional: AI Studio Cost Limits and Guardrails
+AI_STUDIO_USER_RATE_LIMIT_PER_HOUR=5
+AI_STUDIO_GLOBAL_DAILY_CAP=50
+AI_STUDIO_MAX_CRITIQUE_LOOPS=2
+AI_STUDIO_MAX_WEB_RESULTS=3
+AI_STUDIO_ENABLE_IMAGE_GEN=true
 
 # Optional: enable LangSmith tracing and provide a key when enabled.
 LANGSMITH_TRACING=false

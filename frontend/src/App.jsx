@@ -62,6 +62,16 @@ function App() {
   const [likedPosts, setLikedPosts] = useState([]);
   const [postVideoSrc, setPostVideoSrc] = useState(null);
   const [selectedFile, setSelectedFile] = useState(null);
+  const [aiStudioQuery, setAiStudioQuery] = useState('');
+  const [aiStudioPostId, setAiStudioPostId] = useState(null);
+
+  const navigateToAiStudio = useCallback((query = '', postId = null) => {
+    const safeQuery = typeof query === 'string' ? query : '';
+    const safePostId = typeof postId === 'string' ? postId : null;
+    setAiStudioQuery(safeQuery);
+    setAiStudioPostId(safePostId);
+    setCurrentView('agent-search');
+  }, []);
 
   const handleLogout = useCallback(() => {
     localStorage.removeItem('token');
@@ -745,6 +755,8 @@ function App() {
             handleViewLikers={handleViewLikers} handleSaveToggle={handleSaveToggle} handleToggleComments={handleToggleComments}
             handleDeleteComment={handleDeleteComment} handleCommentSubmit={handleCommentSubmit} navigateToProfile={navigateToProfile}
             handleFollowToggle={handleFollowToggle}
+            navigateToAiStudio={navigateToAiStudio}
+            onAnalyzePost={(p) => navigateToAiStudio(p.caption, p.id)}
           />
         )}
 
@@ -767,7 +779,15 @@ function App() {
           />
         )}
 
-        {currentView === 'agent-search' && <SearchAgentPage />}
+        {currentView === 'agent-search' && (
+          <SearchAgentPage 
+            key={`${aiStudioPostId || 'direct'}-${aiStudioQuery || 'empty'}`}
+            initialQuery={aiStudioQuery}
+            initialPostId={aiStudioPostId}
+            navigateToFeed={navigateToFeed}
+            onPostPublished={() => fetchFeed()}
+          />
+        )}
       </div>
 
       {showLikersModal && <LikersModal setShowLikersModal={setShowLikersModal} currentLikers={currentLikers} email={email} currentUserId={currentUserId} navigateToProfile={navigateToProfile} handleFollowToggle={handleFollowToggle} />}

@@ -1,4 +1,5 @@
 import Cropper from 'react-easy-crop';
+import { Sparkles } from 'lucide-react';
 import PostCard from '../components/PostCard';
 
 const FeedPage = ({
@@ -15,10 +16,47 @@ const FeedPage = ({
   email, currentUserId, loadedComments, showComments, commentInputs, setCommentInputs,
   handleDeletePost, handleLikeToggle, handleViewLikers, handleSaveToggle,
   handleToggleComments, handleDeleteComment, handleCommentSubmit,
-  navigateToProfile, handleFollowToggle
+  navigateToProfile, handleFollowToggle,
+  navigateToAiStudio, onAnalyzePost
 }) => {
   return (
     <div className="feed-content-wrapper">
+      {/* AI STUDIO PROMPT BANNER */}
+      {navigateToAiStudio && (
+        <div 
+          className="ai-studio-prompt-banner" 
+          onClick={() => navigateToAiStudio()} 
+          role="button" 
+          tabIndex={0}
+          onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigateToAiStudio(); }}
+          style={{ cursor: 'pointer' }}
+          aria-label="Open AI Studio Banner"
+        >
+          <div className="ai-studio-prompt-content">
+            <div className="ai-studio-icon-bubble">
+              <Sparkles className="ai-studio-sparkle-icon" size={18} />
+            </div>
+            <div className="ai-studio-text-block">
+              <div className="ai-studio-prompt-title">
+                <span>AI Studio</span>
+                <span className="ai-studio-new-badge">New</span>
+              </div>
+              <div className="ai-studio-prompt-sub">
+                Analyze discussions, verify facts with live web search, and turn them into verified posts.
+              </div>
+            </div>
+          </div>
+          <button 
+            type="button" 
+            className="ai-studio-prompt-btn" 
+            onClick={(e) => { e.stopPropagation(); navigateToAiStudio(); }}
+          >
+            <Sparkles size={14} />
+            <span>Open Studio</span>
+          </button>
+        </div>
+      )}
+
       {/* UPLOAD CARD */}
       <div className="upload-card" style={{ maxWidth: '550px', width: '100%', margin: '0 auto 20px', padding: '20px', border: '1px solid #dbdbdb', borderRadius: '8px', backgroundColor: 'white' }}>
         <h3 className="upload-title" style={{ marginTop: 0, marginBottom: '15px' }}>Create Post</h3>
@@ -118,6 +156,7 @@ const FeedPage = ({
             handleCommentSubmit={handleCommentSubmit}
             navigateToProfile={navigateToProfile}
             handleFollowToggle={handleFollowToggle}
+            onAnalyzePost={onAnalyzePost}
           />
         ))}
       </div>
