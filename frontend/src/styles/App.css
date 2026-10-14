@@ -318,6 +318,52 @@
 .save-btn:hover { transform: scale(1.1); transition: transform 0.2s ease; }
 .delete-post-btn { opacity: 0.7; filter: grayscale(100%); transition: all 0.2s ease; }
 .delete-post-btn:hover { opacity: 1; filter: grayscale(0%); transform: scale(1.1); }
+
+/* AI Studio Post Verification Micro-Pill */
+.ai-analyze-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 10px;
+  background: rgba(238, 242, 255, 0.85);
+  border: 1px solid rgba(199, 210, 254, 0.65);
+  border-radius: 9999px;
+  color: #4338ca;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  cursor: pointer;
+  box-shadow: 0 1px 2px rgba(99, 102, 241, 0.05);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  user-select: none;
+  vertical-align: middle;
+}
+
+.ai-analyze-btn:hover {
+  background: rgba(224, 231, 255, 0.95);
+  border-color: rgba(165, 180, 252, 0.9);
+  color: #3730a3;
+  transform: scale(1.05);
+  box-shadow: 0 2px 8px -1px rgba(99, 102, 241, 0.2);
+}
+
+.ai-analyze-btn:active {
+  transform: scale(0.95);
+  background: #e0e7ff;
+}
+
+.ai-verify-icon {
+  width: 14px;
+  height: 14px;
+  color: #4f46e5;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.ai-analyze-btn:hover .ai-verify-icon {
+  transform: rotate(8deg);
+}
+
 .like-count { font-size: 14px; font-weight: 600; }
 .like-count.clickable-likes { cursor: pointer; }
 .comments-count { font-size: 14px; color: #8e8e8e; margin-left: auto; }

@@ -174,5 +174,20 @@ describe('PostCard Component', () => {
     );
     expect(screen.queryByRole('button', { name: 'Delete' })).not.toBeInTheDocument();
   });
+
+  it('renders upgraded Verify micro-pill button and triggers onAnalyzePost on click', () => {
+    const onAnalyzePost = vi.fn();
+    render(<PostCard {...defaultProps} onAnalyzePost={onAnalyzePost} />);
+
+    const verifyBtn = screen.getByRole('button', { name: /Analyze & Verify with AI Studio/i });
+    expect(verifyBtn).toBeInTheDocument();
+    expect(verifyBtn).toHaveClass('ai-analyze-btn');
+    expect(screen.getByText('Verify')).toBeInTheDocument();
+
+    fireEvent.click(verifyBtn);
+    expect(onAnalyzePost).toHaveBeenCalledTimes(1);
+    expect(onAnalyzePost).toHaveBeenCalledWith(basePost);
+  });
 });
+
 
