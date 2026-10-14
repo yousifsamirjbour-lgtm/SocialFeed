@@ -2,66 +2,189 @@ import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import SearchAgentPage from '../SearchAgentPage';
 
-describe('SearchAgentPage', () => {
+describe('SearchAgentPage (AI Studio)', () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+    localStorage.clear();
   });
 
-  it('renders search form in initial idle state', () => {
+  const createMockSseStream = (events) => {
+    const streamText = events
+      .map(e => `event: ${e.event}\ndata: ${JSON.stringify(e.data)}\n\n`)
+      .join('');
+    
+    const encoder = new TextEncoder();
+    const uint8Array = encoder.encode(streamText);
+
+    return new ReadableStream({
+      start(controller) {
+        controller.enqueue(uint8Array);
+        controller.close();
+      }
+    });
+  };
+
+  it('renders initial idle AI Studio state with input and cost protection badge', () => {
     render(<SearchAgentPage />);
 
-    expect(screen.getByText('Search the web')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText('Ask a question or enter a topic')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Search' })).toBeDisabled();
+    expect(screen.getByText('Research Assistant & Fact-Checker')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/Is Python or JavaScript better for beginners in 2026/i)).toBeInTheDocument();
+    expect(screen.getByText('$0.00 Free Tier Protected')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Start Research' })).toBeDisabled();
   });
 
-  it('displays loading state and successfully renders search response with Markdown', async () => {
-    const fakeResponse = { response: 'Here is info with [Docs](https://docs.com).' };
+  it('enables Start Research button when query is entered and updates input', () => {
+    render(<SearchAgentPage />);
+
+    const input = screen.getByPlaceholderText(/Is Python or JavaScript better for beginners in 2026/i);
+    fireEvent.change(input, { target: { value: 'Is Earth flat or round?' } });
+
+    const submitBtn = screen.getByRole('button', { name: 'Start Research' });
+    expect(submitBtn).toBeEnabled();
+  });
+
+  it('consumes SSE stream, shows stepper, self-correction, and renders Community vs Reality card', async () => {
+    const mockEvents = [
+      {
+        event: 'step',
+        data: { name: 'retrieve_internal', status: 'Reading what people on SocialFeed said about this...' }
+      },
+      {
+        event: 'step',
+        data: {
+          name: 'critique',
+          status: 'Self-Correction: Editor AI requested revisions (iteration 1/2). Rewriting...',
+          warning: true,
+          partial: { critique_feedback: 'Include specific citations for claims.' }
+        }
+      },
+      {
+        event: 'approval_ready',
+        data: {
+          thread_id: 'test-thread-123',
+          query: 'Quantum Computing facts',
+          community_summary: 'Community members discussed quantum supremacy.',
+          web_summary: 'Verified research from [Qiskit Docs](https://qiskit.org).',
+          verdict: 'Verified / True',
+          draft_post: 'Quantum computing is rapidly advancing in 2026.',
+          image_url: 'https://res.cloudinary.com/demo/image/upload/sample.jpg',
+          internal_docs: [{ author: 'Alice', caption: 'Quantum algorithms are exciting' }],
+          web_docs: [{ title: 'Qiskit Docs', url: 'https://qiskit.org' }]
+        }
+      },
+      {
+        event: 'complete',
+        data: { thread_id: 'test-thread-123', status: 'ready_for_approval' }
+      }
+    ];
+
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => fakeResponse
+      body: createMockSseStream(mockEvents)
     }));
 
-    render(<SearchAgentPage />);
+    render(<SearchAgentPage initialQuery="Quantum Computing" />);
 
-    const input = screen.getByPlaceholderText('Ask a question or enter a topic');
-    fireEvent.change(input, { target: { value: 'quantum computing' } });
+    const submitBtn = screen.getByRole('button', { name: 'Start Research' });
+    fireEvent.click(submitBtn);
 
-    const searchBtn = screen.getByRole('button', { name: 'Search' });
-    expect(searchBtn).toBeEnabled();
-    fireEvent.click(searchBtn);
-
-    // Verify loading status
-    expect(screen.getByText('Searching the web...')).toBeInTheDocument();
-
-    // Verify rendered markdown result and link attributes
+    // Verify stepper rendered
     await waitFor(() => {
-      expect(screen.getByText('Docs')).toBeInTheDocument();
+      expect(screen.getByText('Agent Execution Stepper')).toBeInTheDocument();
     });
 
-    const link = screen.getByRole('link', { name: 'Docs' });
-    expect(link).toHaveAttribute('href', 'https://docs.com');
+    // Verify self-correction visible notice
+    await waitFor(() => {
+      expect(screen.getByText(/Editor AI Visible Self-Correction/i)).toBeInTheDocument();
+      expect(screen.getByText(/Include specific citations for claims/i)).toBeInTheDocument();
+    });
+
+    // Verify Community vs. Reality Card
+    await waitFor(() => {
+      expect(screen.getByText('EVIDENCE VERDICT:')).toBeInTheDocument();
+      expect(screen.getByText('Verified / True')).toBeInTheDocument();
+      expect(screen.getByText(/Community members discussed quantum supremacy/i)).toBeInTheDocument();
+      expect(screen.getByText(/Qiskit Docs/i)).toBeInTheDocument();
+    });
+
+    // Verify markdown link has security attributes
+    const link = screen.getByRole('link', { name: /Qiskit Docs/i });
+    expect(link).toHaveAttribute('href', 'https://qiskit.org');
     expect(link).toHaveAttribute('target', '_blank');
     expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+
+    // Verify draft editor and approve button
+    const textarea = screen.getByLabelText(/Post Caption \(Editable\)/i);
+    expect(textarea).toHaveValue('Quantum computing is rapidly advancing in 2026.');
+    expect(screen.getByRole('button', { name: /✓ Approve & Publish to Feed/i })).toBeInTheDocument();
   });
 
-  it('displays error state when search request fails', async () => {
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
-      ok: false,
-      status: 500,
-      text: async () => JSON.stringify({ detail: 'AI model temporarily unavailable' })
-    }));
+  it('submits human approval and renders publication success banner', async () => {
+    const mockEvents = [
+      {
+        event: 'approval_ready',
+        data: {
+          thread_id: 'test-thread-456',
+          query: 'AI Progress',
+          community_summary: 'Community summary text',
+          web_summary: 'Web summary text',
+          verdict: 'Mixed / Nuanced',
+          draft_post: 'Initial AI draft text',
+          image_url: null,
+          internal_docs: [],
+          web_docs: []
+        }
+      }
+    ];
 
-    render(<SearchAgentPage />);
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        body: createMockSseStream(mockEvents)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: 'Post published successfully!', post_id: 'new-post-id' })
+      });
 
-    const input = screen.getByPlaceholderText('Ask a question or enter a topic');
-    fireEvent.change(input, { target: { value: 'failing query' } });
+    vi.stubGlobal('fetch', fetchMock);
 
-    const searchBtn = screen.getByRole('button', { name: 'Search' });
-    fireEvent.click(searchBtn);
+    const onPostPublished = vi.fn();
+    render(<SearchAgentPage initialQuery="AI Progress" onPostPublished={onPostPublished} />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Research' }));
 
     await waitFor(() => {
-      expect(screen.getByText('AI model temporarily unavailable')).toBeInTheDocument();
+      expect(screen.getByRole('button', { name: /✓ Approve & Publish to Feed/i })).toBeInTheDocument();
+    });
+
+    // Edit the text before approval
+    const textarea = screen.getByLabelText(/Post Caption \(Editable\)/i);
+    fireEvent.change(textarea, { target: { value: 'User edited final verified post.' } });
+
+    // Click Approve & Publish
+    fireEvent.click(screen.getByRole('button', { name: /✓ Approve & Publish to Feed/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Post Successfully Published to Feed!')).toBeInTheDocument();
+    });
+
+    expect(onPostPublished).toHaveBeenCalled();
+  });
+
+  it('displays rate-limit error banner when response is 429', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: false,
+      status: 429,
+      json: async () => ({ detail: 'You have reached your limit of 5 AI research queries per hour.' })
+    }));
+
+    render(<SearchAgentPage initialQuery="Rate limit query" />);
+
+    fireEvent.click(screen.getByRole('button', { name: 'Start Research' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/limit of 5 AI research queries per hour/i)).toBeInTheDocument();
     });
   });
 });
