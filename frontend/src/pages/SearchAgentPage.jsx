@@ -111,7 +111,16 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
             if (eventType === 'step') {
               if (parsed.name) {
                 setCurrentStepId(parsed.name);
-                setCompletedSteps(prev => new Set([...prev, parsed.name]));
+                setCompletedSteps(prev => {
+                  const nextSet = new Set(prev);
+                  const stepIndex = DEFAULT_STEPS.findIndex(s => s.id === parsed.name);
+                  if (stepIndex > 0) {
+                    for (let i = 0; i < stepIndex; i++) {
+                      nextSet.add(DEFAULT_STEPS[i].id);
+                    }
+                  }
+                  return nextSet;
+                });
               }
               if (parsed.status) {
                 setStatusText(parsed.status);
@@ -124,7 +133,7 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
               setComparisonData(parsed);
               setEditedPost(parsed.draft_post || '');
               setSelectedImage(parsed.image_url || null);
-              setCompletedSteps(prev => new Set([...prev, 'approval_ready']));
+              setCompletedSteps(new Set(DEFAULT_STEPS.map(s => s.id)));
               setCurrentStepId('approval_ready');
               setStatusText('Synthesis verified. Ready for your review & publication.');
             } else if (eventType === 'error') {

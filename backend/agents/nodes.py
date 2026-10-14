@@ -132,20 +132,25 @@ async def web_search_node(state: AgentState) -> Dict[str, Any]:
         searcher = TavilySearch(max_results=MAX_SEARCH_RESULTS)
         # Tavily search call wrapped in threadpool to guarantee async safety
         raw_results = await searcher.ainvoke(query)
-        if isinstance(raw_results, list):
-            for r in raw_results:
-                if isinstance(r, dict):
-                    web_docs.append({
-                        "title": r.get("title", "Web Source"),
-                        "url": r.get("url", ""),
-                        "content": r.get("content", "")[:400]
-                    })
+        items = []
+        if isinstance(raw_results, dict):
+            items = raw_results.get("results", [])
+        elif isinstance(raw_results, list):
+            items = raw_results
         elif isinstance(raw_results, str):
             web_docs.append({
                 "title": "Web Search Result",
                 "url": "",
                 "content": raw_results[:400]
             })
+
+        for r in items:
+            if isinstance(r, dict):
+                web_docs.append({
+                    "title": r.get("title", "Web Source"),
+                    "url": r.get("url", ""),
+                    "content": r.get("content", "")[:400]
+                })
     except Exception as e:
         web_docs.append({
             "title": "Search Service Notice",
@@ -353,7 +358,9 @@ async def media_director_node(state: AgentState) -> Dict[str, Any]:
             )
             cloudinary_url = upload_result.get("secure_url")
         except Exception:
-            cloudinary_url = None
+            cloudinary_url = pollinations_url
+    elif pollinations_url:
+        cloudinary_url = pollinations_url
 
     return {
         "image_prompt": image_prompt,

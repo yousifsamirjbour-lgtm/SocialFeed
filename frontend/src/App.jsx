@@ -779,6 +779,7 @@ function App() {
 
         {currentView === 'agent-search' && (
           <SearchAgentPage 
+            key={`${aiStudioPostId || 'direct'}-${aiStudioQuery || 'empty'}`}
             initialQuery={aiStudioQuery}
             initialPostId={aiStudioPostId}
             navigateToFeed={navigateToFeed}
