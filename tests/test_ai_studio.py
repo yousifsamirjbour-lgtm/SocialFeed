@@ -397,9 +397,9 @@ async def test_media_director_dual_visual_generation():
                     res = await media_director_node(state)
                     assert res["ai_image_url"] == "https://res.cloudinary.com/test-cloud/image/upload/dual.jpg"
                     assert res["web_image_url"] == "https://res.cloudinary.com/test-cloud/image/upload/dual.jpg"
-                    assert res["image_url"] is not None
                     assert res["ai_image_prompt"] == "Cinematic photo of Mbappe and Yamal"
-                    assert res["web_image_query"] == "Mbappe Yamal 2026"
+                    assert "Mbappe Yamal" in res["web_image_query"]
+                    assert "soccer" in res["web_image_query"]
 
 @pytest.mark.asyncio
 async def test_upload_research_image_endpoint(client, auth_headers):

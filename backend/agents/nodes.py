@@ -1,6 +1,7 @@
 import os
 import json
 import io
+import re
 import random
 import uuid
 import urllib.parse
@@ -345,19 +346,22 @@ async def media_director_node(state: AgentState) -> Dict[str, Any]:
 
     # 1. Internal Filtering: Extract clean English AI prompt and Web search query
     sys_prompt = (
-        "You are an art director and visual research specialist for a social media platform. "
-        "Given a research topic and post summary, extract clean search parameters in English:\n"
-        '1. "ai_image_prompt": A detailed, descriptive photography prompt in English tailored for image generation models (under 30 words). Focus on visual elements, lighting, style, and atmosphere. Avoid text, words, watermarks, or violence.\n'
-        '2. "web_image_query": A concise, keyword-focused English search query (2-6 keywords) optimized for web image search to find real, authentic photos.\n'
+        "You are an art director and visual research specialist for a social media platform.\n"
+        "Given a research topic and post summary, extract clean search parameters in English adhering to these strict rules:\n"
+        "1. PRESERVE PROPER NOUNS: You MUST explicitly include the exact names of the specific people, places, teams, organizations, or subjects mentioned in the text (e.g., 'Kylian Mbappe and Lamine Yamal', 'FC Barcelona', 'Python and JavaScript'). NEVER output vague generalizations like 'two players', 'athletes', 'a person', or 'a stadium'.\n"
+        "2. CONTEXT & DISAMBIGUATION: If the text mentions association football or 'كرة قدم' (or any football players/clubs), you MUST explicitly use the word 'soccer' (or 'association football player') rather than 'football', to strictly prevent search engines from returning American football (NFL) photos.\n"
+        "3. OUTPUT FORMAT:\n"
+        '   - "ai_image_prompt": A detailed, vivid, photorealistic photography prompt in English featuring the exact named subjects in action or portrait (under 35 words). Focus on authentic appearance, natural stadium or studio lighting, and sharp detail. No watermarks, text, or graphic borders.\n'
+        '   - "web_image_query": A precise, keyword-focused English query (3-6 keywords) containing the exact subject names and disambiguated sport/topic (e.g., "Kylian Mbappe Lamine Yamal soccer match") optimized for web image search.\n'
         "Respond ONLY with a valid JSON object matching:\n"
         '{"ai_image_prompt": "...", "web_image_query": "..."}'
     )
-    user_prompt = f"Topic: {query}\nDraft Summary: {draft_post[:200]}"
+    user_prompt = f"Topic: {query}\nDraft Summary: {draft_post[:400]}"
 
     ai_image_prompt = ""
     web_image_query = ""
     try:
-        llm = get_llm(temperature=0.3, max_tokens=500)
+        llm = get_llm(temperature=0.2, max_tokens=500)
         res = await llm.ainvoke([
             SystemMessage(content=sys_prompt),
             HumanMessage(content=user_prompt)
@@ -376,6 +380,17 @@ async def media_director_node(state: AgentState) -> Dict[str, Any]:
         ai_image_prompt = f"Photorealistic editorial illustration representing {query}"
     if not web_image_query:
         web_image_query = query
+
+    # Defensive Disambiguation: if association football context is present, ensure 'soccer' is used
+    combined_context = (query + " " + draft_post + " " + web_image_query).lower()
+    football_signals = [
+        "كرة قدم", "كورة", "مبابي", "يامال", "ميسي", "رونالدو",
+        "barcelona", "madrid", "psg", "premier league", "la liga", "champions league", "mbappe", "yamal", "messi", "ronaldo"
+    ]
+    if any(term in combined_context for term in football_signals):
+        web_image_query = re.sub(r'\bfootball\b', 'soccer', web_image_query, flags=re.IGNORECASE)
+        if "soccer" not in web_image_query.lower() and "player" not in web_image_query.lower():
+            web_image_query = f"{web_image_query} soccer".strip()
 
     # 2. Fetch AI Image via Pollinations and upload to Cloudinary
     seed = random.randint(1, 999999)

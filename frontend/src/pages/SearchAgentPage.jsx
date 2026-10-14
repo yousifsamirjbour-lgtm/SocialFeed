@@ -311,24 +311,26 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
 
       {/* Query Input Box */}
       <form className="ai-studio-query-card" onSubmit={handleStartResearch}>
-        <label htmlFor="ai-studio-input" className="sr-only">
-          What are you wondering about?
+        <label htmlFor="ai-studio-input" className="ai-studio-label">
+          What claim or topic would you like to research?
         </label>
-        <textarea
-          id="ai-studio-input"
-          ref={textareaRef}
-          value={searchInput}
-          onChange={(e) => setSearchInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="What are you wondering about?..."
-          disabled={isLoading}
-          maxLength={500}
-          rows={1}
-          aria-label="What are you wondering about?"
-        />
+        <div className="ai-studio-input-area">
+          <textarea
+            id="ai-studio-input"
+            ref={textareaRef}
+            value={searchInput}
+            onChange={(e) => setSearchInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="What are you wondering about?..."
+            disabled={isLoading}
+            maxLength={500}
+            rows={1}
+            aria-label="What are you wondering about?"
+          />
+        </div>
 
-        <div className="ai-studio-toolbar">
-          <label className={`ai-studio-photo-toggle ${wantImage ? 'active' : ''}`}>
+        <div className="ai-studio-options-row">
+          <label className="ai-studio-checkbox-label">
             <input
               type="checkbox"
               checked={wantImage}
@@ -336,13 +338,8 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
               disabled={isLoading}
               aria-label="Generate Photo"
             />
-            <span className="toggle-switch-track" aria-hidden="true">
-              <span className="toggle-switch-thumb" />
-            </span>
-            <span className="toggle-photo-icon" aria-hidden="true">🖼️</span>
-            <span className="toggle-photo-text">Generate Photo</span>
+            <span>Generate Photo</span>
           </label>
-
           <button
             type="submit"
             className="ai-studio-submit-btn"
