@@ -320,3 +320,41 @@ async def test_retriever_fetches_posts_and_target_post(db_session, test_user, sa
     assert results[0]["id"] == str(sample_post.id)
     assert results[0]["is_target_post"] is True
 
+@pytest.mark.asyncio
+async def test_media_director_defensive_empty_prompt_and_dynamic_seed():
+    """Verify that empty candidate prompt from reasoning LLM safely falls back and generates dynamic non-42 seed."""
+    from backend.agents.nodes import media_director_node
+
+    mock_llm = MagicMock()
+    # Simulate LLM hitting token limit on reasoning and emitting empty content
+    mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=""))
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = b"fake-jpeg-bytes-long-enough"
+
+    captured_url = None
+    async def mock_get(url, *args, **kwargs):
+        nonlocal captured_url
+        captured_url = url
+        return mock_resp
+
+    mock_client = AsyncMock()
+    mock_client.get = mock_get
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("backend.agents.nodes.get_llm", return_value=mock_llm):
+        with patch("backend.agents.nodes.httpx.AsyncClient", return_value=mock_client):
+            with patch("backend.agents.nodes.uploader.upload", return_value={"secure_url": "https://res.cloudinary.com/test-cloud/image/upload/custom.jpg"}):
+                state: AgentState = {
+                    "want_image": True,
+                    "query": "Mbappe vs Yamal",
+                    "draft_post": "Football analysis."
+                }
+                res = await media_director_node(state)
+                assert res["image_prompt"] == "Photorealistic editorial illustration representing Mbappe vs Yamal"
+                assert res["image_url"] == "https://res.cloudinary.com/test-cloud/image/upload/custom.jpg"
+                assert "gen.pollinations.ai/image/" in captured_url
+                assert "seed=42" not in captured_url
+

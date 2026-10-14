@@ -1,6 +1,7 @@
 import os
 import json
 import io
+import random
 import uuid
 import urllib.parse
 import logging
@@ -337,33 +338,50 @@ async def media_director_node(state: AgentState) -> Dict[str, Any]:
 
     # 1. Refine image prompt
     prompt_generator_sys = (
-        "You are an art director. Create a clean, visually striking, photorealistic image description (under 25 words) "
-        "illustrating the core concept of the post. Avoid text, words, watermarks, or violence in the image."
+        "You are an art director for a modern social media platform. "
+        "Create a clean, visually striking, photorealistic image description in descriptive English (under 25 words) "
+        "illustrating the core concept of the post. Avoid text, words, watermarks, or violence. "
+        "Always write the prompt in English, regardless of the input language. "
+        "Respond ONLY with the English image description."
     )
-    image_prompt = query
+    image_prompt = ""
     try:
-        llm = get_llm(temperature=0.7, max_tokens=60)
+        llm = get_llm(temperature=0.7, max_tokens=500)
         res = await llm.ainvoke([
             SystemMessage(content=prompt_generator_sys),
             HumanMessage(content=f"Post Topic: {query}\nSummary: {draft_post[:150]}")
         ])
-        approx_tokens += 50
-        image_prompt = res.content.strip().replace('"', '').replace('\n', ' ')
-    except Exception:
-        image_prompt = f"Editorial photographic illustration of {query}"
+        approx_tokens += 300
+        candidate = res.content.strip().replace('"', '').replace('\n', ' ')
+        if candidate:
+            image_prompt = candidate
+    except Exception as e:
+        logger.warning(f"Image prompt generation error: {e}")
+
+    if not image_prompt:
+        image_prompt = f"Photorealistic editorial illustration representing {query}"
 
     # 2. Call Pollinations API server-side
+    seed = random.randint(1, 999999)
     encoded_prompt = urllib.parse.quote(image_prompt)
-    pollinations_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed=42"
+    pollinations_url = f"https://gen.pollinations.ai/image/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
     headers = {"Authorization": f"Bearer {POLLINATIONS_API_KEY}"} if POLLINATIONS_API_KEY else {}
 
     image_bytes = None
     try:
-        async with httpx.AsyncClient(timeout=15.0) as client:
+        async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
             resp = await client.get(pollinations_url, headers=headers)
-            if resp.status_code == 200 and resp.content:
+            if resp.status_code == 200 and resp.content and len(resp.content) > 10 and resp.content.strip() != b"{}":
                 image_bytes = resp.content
-    except Exception:
+            else:
+                # Fallback to secondary endpoint
+                alt_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
+                alt_resp = await client.get(alt_url, headers=headers)
+                if alt_resp.status_code == 200 and alt_resp.content and len(alt_resp.content) > 10 and alt_resp.content.strip() != b"{}":
+                    image_bytes = alt_resp.content
+                    pollinations_url = alt_url
+    except Exception as e:
+        logger.warning(f"Pollinations fetch error: {e}")
         image_bytes = None
 
     # 3. Upload bytes to Cloudinary
@@ -377,7 +395,8 @@ async def media_director_node(state: AgentState) -> Dict[str, Any]:
                 resource_type="image"
             )
             cloudinary_url = upload_result.get("secure_url")
-        except Exception:
+        except Exception as e:
+            logger.warning(f"Cloudinary upload error: {e}")
             cloudinary_url = pollinations_url
     elif pollinations_url:
         cloudinary_url = pollinations_url
