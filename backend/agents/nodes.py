@@ -3,8 +3,12 @@ import json
 import io
 import uuid
 import urllib.parse
+import logging
 from typing import Dict, Any, List, Optional
 import httpx
+
+logger = logging.getLogger(__name__)
+
 from fastapi.concurrency import run_in_threadpool
 from langchain_groq import ChatGroq
 from langchain_tavily import TavilySearch
