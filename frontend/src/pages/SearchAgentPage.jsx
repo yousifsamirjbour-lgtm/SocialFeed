@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import './SearchAgentPage.css';
@@ -35,6 +35,7 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
   const [error, setError] = useState('');
   const abortControllerRef = useRef(null);
   const fileInputRef = useRef(null);
+  const textareaRef = useRef(null);
 
   const handleDeviceUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -212,6 +213,22 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
     }
   };
 
+  useEffect(() => {
+    if (textareaRef.current) {
+      textareaRef.current.style.height = 'auto';
+      textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 240)}px`;
+    }
+  }, [searchInput]);
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      if (!isLoading && typeof searchInput === 'string' && searchInput.trim()) {
+        handleStartResearch(e);
+      }
+    }
+  };
+
   const handleApprove = async () => {
     if (!threadId) return;
     setPublishStatus('publishing');
@@ -294,20 +311,38 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
 
       {/* Query Input Box */}
       <form className="ai-studio-query-card" onSubmit={handleStartResearch}>
-        <label htmlFor="ai-studio-input" className="ai-studio-label">
-          What claim or topic would you like to research?
+        <label htmlFor="ai-studio-input" className="sr-only">
+          What are you wondering about?
         </label>
-        <div className="ai-studio-input-row">
-          <input
-            id="ai-studio-input"
-            type="search"
-            value={searchInput}
-            onChange={(e) => setSearchInput(e.target.value)}
-            placeholder="e.g. Is Python or JavaScript better for beginners in 2026?"
-            disabled={isLoading}
-            maxLength={300}
-            required
-          />
+        <textarea
+          id="ai-studio-input"
+          ref={textareaRef}
+          value={searchInput}
+          onChange={(e) => setSearchInput(e.target.value)}
+          onKeyDown={handleKeyDown}
+          placeholder="What are you wondering about?..."
+          disabled={isLoading}
+          maxLength={500}
+          rows={1}
+          aria-label="What are you wondering about?"
+        />
+
+        <div className="ai-studio-toolbar">
+          <label className={`ai-studio-photo-toggle ${wantImage ? 'active' : ''}`}>
+            <input
+              type="checkbox"
+              checked={wantImage}
+              onChange={(e) => setWantImage(e.target.checked)}
+              disabled={isLoading}
+              aria-label="Generate Photo"
+            />
+            <span className="toggle-switch-track" aria-hidden="true">
+              <span className="toggle-switch-thumb" />
+            </span>
+            <span className="toggle-photo-icon" aria-hidden="true">🖼️</span>
+            <span className="toggle-photo-text">Generate Photo</span>
+          </label>
+
           <button
             type="submit"
             className="ai-studio-submit-btn"
@@ -315,19 +350,6 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
           >
             {isLoading ? 'Researching...' : 'Start Research'}
           </button>
-        </div>
-
-        <div className="ai-studio-options-row">
-          <label className="ai-studio-checkbox-label">
-            <input
-              type="checkbox"
-              checked={wantImage}
-              onChange={(e) => setWantImage(e.target.checked)}
-              disabled={isLoading}
-            />
-            <span>Generate Concept Illustration with Pollinations.ai</span>
-          </label>
-          <span className="ai-studio-cost-badge">$0.00 Free Tier Protected</span>
         </div>
       </form>
 

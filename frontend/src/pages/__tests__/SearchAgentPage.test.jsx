@@ -24,19 +24,20 @@ describe('SearchAgentPage (AI Studio)', () => {
     });
   };
 
-  it('renders initial idle AI Studio state with input and cost protection badge', () => {
+  it('renders initial idle AI Studio state with unified prompt card and Generate Photo toggle', () => {
     render(<SearchAgentPage />);
 
     expect(screen.getByText('Research Assistant & Fact-Checker')).toBeInTheDocument();
-    expect(screen.getByPlaceholderText(/Is Python or JavaScript better for beginners in 2026/i)).toBeInTheDocument();
-    expect(screen.getByText('$0.00 Free Tier Protected')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText(/What are you wondering about/i)).toBeInTheDocument();
+    expect(screen.getByText('Generate Photo')).toBeInTheDocument();
+    expect(screen.queryByText('$0.00 Free Tier Protected')).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Start Research' })).toBeDisabled();
   });
 
   it('enables Start Research button when query is entered and updates input', () => {
     render(<SearchAgentPage />);
 
-    const input = screen.getByPlaceholderText(/Is Python or JavaScript better for beginners in 2026/i);
+    const input = screen.getByPlaceholderText(/What are you wondering about/i);
     fireEvent.change(input, { target: { value: 'Is Earth flat or round?' } });
 
     const submitBtn = screen.getByRole('button', { name: 'Start Research' });
@@ -194,9 +195,43 @@ describe('SearchAgentPage (AI Studio)', () => {
       render(<SearchAgentPage initialQuery={mockSyntheticEvent} />);
     }).not.toThrow();
 
-    const input = screen.getByPlaceholderText(/Is Python or JavaScript better for beginners in 2026/i);
+    const input = screen.getByPlaceholderText(/What are you wondering about/i);
     expect(input.value).toBe('');
     expect(screen.getByRole('button', { name: 'Start Research' })).toBeDisabled();
+  });
+
+  it('triggers research on Enter key press but allows Shift+Enter for newline', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({
+      ok: true,
+      body: createMockSseStream([])
+    });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SearchAgentPage />);
+    const textarea = screen.getByPlaceholderText(/What are you wondering about/i);
+    fireEvent.change(textarea, { target: { value: 'Multi-line test' } });
+
+    // Shift + Enter should NOT trigger research
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: true });
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    // Enter alone triggers research
+    fireEvent.keyDown(textarea, { key: 'Enter', shiftKey: false });
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalled();
+    });
+  });
+
+  it('toggles the Generate Photo checkbox switch correctly', () => {
+    render(<SearchAgentPage />);
+    const toggle = screen.getByRole('checkbox', { name: /Generate Photo/i });
+    expect(toggle).not.toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(toggle).toBeChecked();
+
+    fireEvent.click(toggle);
+    expect(toggle).not.toBeChecked();
   });
 
   it('renders split-screen AI and Web media cards and allows user selection, device upload, and text-only removal', async () => {
