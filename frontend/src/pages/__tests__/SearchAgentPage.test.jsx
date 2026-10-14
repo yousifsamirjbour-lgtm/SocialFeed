@@ -187,4 +187,15 @@ describe('SearchAgentPage (AI Studio)', () => {
       expect(screen.getByText(/limit of 5 AI research queries per hour/i)).toBeInTheDocument();
     });
   });
+
+  it('gracefully handles non-string initialQuery (e.g. SyntheticEvent) without throwing or crashing', () => {
+    const mockSyntheticEvent = { target: {}, preventDefault: vi.fn(), stopPropagation: vi.fn() };
+    expect(() => {
+      render(<SearchAgentPage initialQuery={mockSyntheticEvent} />);
+    }).not.toThrow();
+
+    const input = screen.getByPlaceholderText(/Is Python or JavaScript better for beginners in 2026/i);
+    expect(input.value).toBe('');
+    expect(screen.getByRole('button', { name: 'Start Research' })).toBeDisabled();
+  });
 });

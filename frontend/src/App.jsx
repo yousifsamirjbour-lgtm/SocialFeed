@@ -66,8 +66,10 @@ function App() {
   const [aiStudioPostId, setAiStudioPostId] = useState(null);
 
   const navigateToAiStudio = useCallback((query = '', postId = null) => {
-    setAiStudioQuery(query);
-    setAiStudioPostId(postId);
+    const safeQuery = typeof query === 'string' ? query : '';
+    const safePostId = typeof postId === 'string' ? postId : null;
+    setAiStudioQuery(safeQuery);
+    setAiStudioPostId(safePostId);
     setCurrentView('agent-search');
   }, []);
 

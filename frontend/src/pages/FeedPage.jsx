@@ -24,7 +24,7 @@ const FeedPage = ({
       {navigateToAiStudio && (
         <div 
           className="ai-studio-prompt-banner" 
-          onClick={navigateToAiStudio} 
+          onClick={() => navigateToAiStudio()} 
           role="button" 
           tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigateToAiStudio(); }}
@@ -37,7 +37,7 @@ const FeedPage = ({
               <div className="ai-studio-prompt-sub">Analyze discussions, verify facts with live web search, and turn them into verified posts.</div>
             </div>
           </div>
-          <button type="button" className="ai-studio-prompt-btn">Open Studio</button>
+          <button type="button" className="ai-studio-prompt-btn" onClick={(e) => { e.stopPropagation(); navigateToAiStudio(); }}>Open Studio</button>
         </div>
       )}
 

@@ -13,7 +13,8 @@ const DEFAULT_STEPS = [
 ];
 
 const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFeed, onPostPublished }) => {
-  const [searchInput, setSearchInput] = useState(initialQuery || '');
+  const safeInitialQuery = typeof initialQuery === 'string' ? initialQuery : '';
+  const [searchInput, setSearchInput] = useState(safeInitialQuery);
   const [wantImage, setWantImage] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [currentStepId, setCurrentStepId] = useState('');
@@ -32,7 +33,7 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
 
   const handleStartResearch = async (event) => {
     if (event) event.preventDefault();
-    const query = searchInput.trim();
+    const query = (typeof searchInput === 'string' ? searchInput : '').trim();
     if (!query || isLoading) return;
 
     setIsLoading(true);
@@ -252,7 +253,7 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
           <button
             type="submit"
             className="ai-studio-submit-btn"
-            disabled={isLoading || !searchInput.trim()}
+            disabled={isLoading || !(typeof searchInput === 'string' && searchInput.trim())}
           >
             {isLoading ? 'Researching...' : 'Start Research'}
           </button>
