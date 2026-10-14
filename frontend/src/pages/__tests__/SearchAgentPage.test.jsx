@@ -198,4 +198,76 @@ describe('SearchAgentPage (AI Studio)', () => {
     expect(input.value).toBe('');
     expect(screen.getByRole('button', { name: 'Start Research' })).toBeDisabled();
   });
+
+  it('renders split-screen AI and Web media cards and allows user selection, device upload, and text-only removal', async () => {
+    const mockEvents = [
+      {
+        event: 'approval_ready',
+        data: {
+          thread_id: 'thread-media-split',
+          query: 'Mbappe vs Yamal',
+          community_summary: 'Community discussions.',
+          web_summary: 'Web citations.',
+          verdict: 'Mixed / Nuanced',
+          draft_post: 'Football comparison 2026.',
+          ai_image_url: 'https://res.cloudinary.com/test/ai_generated.jpg',
+          web_image_url: 'https://res.cloudinary.com/test/web_sourced.jpg',
+          internal_docs: [],
+          web_docs: []
+        }
+      }
+    ];
+
+    const fetchMock = vi.fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        body: createMockSseStream(mockEvents)
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ image_url: 'https://res.cloudinary.com/test/device_custom.jpg' })
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ message: 'Post published successfully!', post_id: 'post-123' })
+      });
+
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<SearchAgentPage initialQuery="Mbappe vs Yamal" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start Research' }));
+
+    // 1. Verify both cards render
+    await waitFor(() => {
+      expect(screen.getByText('✨ AI Generated Visual')).toBeInTheDocument();
+      expect(screen.getByText('🌐 Web-Sourced Visual')).toBeInTheDocument();
+      expect(screen.getByText('📁 Upload from Device')).toBeInTheDocument();
+    });
+
+    // 2. Select Web-sourced visual
+    const webCard = screen.getByLabelText('Select Web-Sourced Visual');
+    fireEvent.click(webCard);
+    expect(webCard).toHaveClass('selected');
+
+    // 3. Click remove visual (text-only)
+    const removeBtn = screen.getByRole('button', { name: /Remove Visual \(Text-Only\)/i });
+    fireEvent.click(removeBtn);
+    expect(screen.getByText(/Text-only post:/i)).toBeInTheDocument();
+
+    // 4. Test upload from device
+    const fileInput = screen.getByLabelText('Upload image from device');
+    const fakeFile = new File(['fake-png-content'], 'phone_photo.png', { type: 'image/png' });
+    fireEvent.change(fileInput, { target: { files: [fakeFile] } });
+
+    await waitFor(() => {
+      expect(screen.getByText('📱 Device Upload')).toBeInTheDocument();
+    });
+
+    // 5. Approve & Publish
+    fireEvent.click(screen.getByRole('button', { name: /✓ Approve & Publish to Feed/i }));
+    await waitFor(() => {
+      expect(screen.getByText('Post Successfully Published to Feed!')).toBeInTheDocument();
+    });
+  });
 });
+

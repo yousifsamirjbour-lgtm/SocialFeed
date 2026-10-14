@@ -30,6 +30,10 @@ class AgentState(TypedDict, total=False):
     # Media Generation
     image_prompt: Optional[str]
     image_url: Optional[str]
+    ai_image_prompt: Optional[str]
+    web_image_query: Optional[str]
+    ai_image_url: Optional[str]
+    web_image_url: Optional[str]
     
     # Human-in-the-loop Approval & Publishing
     approval_status: Optional[str]  # "pending", "approved", "rejected"

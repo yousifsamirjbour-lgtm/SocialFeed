@@ -26,10 +26,60 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
   const [threadId, setThreadId] = useState('');
   const [comparisonData, setComparisonData] = useState(null);
   const [editedPost, setEditedPost] = useState('');
+  const [aiImageUrl, setAiImageUrl] = useState(null);
+  const [webImageUrl, setWebImageUrl] = useState(null);
+  const [customImageUrl, setCustomImageUrl] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [isUploadingCustom, setIsUploadingCustom] = useState(false);
   const [publishStatus, setPublishStatus] = useState('idle'); // 'idle' | 'publishing' | 'published' | 'cancelled'
   const [error, setError] = useState('');
   const abortControllerRef = useRef(null);
+  const fileInputRef = useRef(null);
+
+  const handleDeviceUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsUploadingCustom(true);
+    setError('');
+    const token = localStorage.getItem('token');
+    const formData = new FormData();
+    formData.append('file', file);
+
+    try {
+      const response = await fetch('/api/agent/research/upload-image', {
+        method: 'POST',
+        headers: {
+          'Authorization': token ? `Bearer ${token}` : ''
+        },
+        body: formData
+      });
+
+      if (!response.ok) {
+        let errText = 'Failed to upload image from device.';
+        try {
+          const d = await response.json();
+          errText = d.detail || d.message || errText;
+        } catch {
+          // ignore
+        }
+        throw new Error(errText);
+      }
+
+      const data = await response.json();
+      if (data.image_url) {
+        setCustomImageUrl(data.image_url);
+        setSelectedImage(data.image_url);
+      }
+    } catch (err) {
+      setError(err.message || 'Error uploading image from device.');
+    } finally {
+      setIsUploadingCustom(false);
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    }
+  };
 
   const handleStartResearch = async (event) => {
     if (event) event.preventDefault();
@@ -41,6 +91,10 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
     setCritiqueWarning('');
     setComparisonData(null);
     setThreadId('');
+    setAiImageUrl(null);
+    setWebImageUrl(null);
+    setCustomImageUrl(null);
+    setSelectedImage(null);
     setPublishStatus('idle');
     setCompletedSteps(new Set());
     setCurrentStepId('retrieve_internal');
@@ -133,7 +187,11 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
               setThreadId(parsed.thread_id);
               setComparisonData(parsed);
               setEditedPost(parsed.draft_post || '');
-              setSelectedImage(parsed.image_url || null);
+              const aiUrl = parsed.ai_image_url || null;
+              const webUrl = parsed.web_image_url || null;
+              setAiImageUrl(aiUrl);
+              setWebImageUrl(webUrl);
+              setSelectedImage(aiUrl || webUrl || parsed.image_url || null);
               setCompletedSteps(new Set(DEFAULT_STEPS.map(s => s.id)));
               setCurrentStepId('approval_ready');
               setStatusText('Synthesis verified. Ready for your review & publication.');
@@ -414,21 +472,119 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
             />
           </div>
 
-          {selectedImage && (
-            <div className="draft-image-preview">
-              <div className="image-preview-header">
-                <span>AI Generated Visual (Cloudinary Hosted)</span>
+          {/* Media Selection Section */}
+          <div className="ai-media-selection-section" aria-label="Media Selection">
+            <div className="media-section-header">
+              <div className="media-title-group">
+                <span className="media-header-icon">🖼️</span>
+                <div>
+                  <h4 className="media-header-title">Post Visual Attachment (Optional)</h4>
+                  <p className="media-header-subtitle">
+                    Select your preferred visual, upload from your device, or publish as text-only.
+                  </p>
+                </div>
+              </div>
+              <div className="media-header-actions">
+                <input
+                  type="file"
+                  ref={fileInputRef}
+                  onChange={handleDeviceUpload}
+                  accept="image/jpeg,image/png,image/webp,image/gif"
+                  style={{ display: 'none' }}
+                  aria-label="Upload image from device"
+                />
                 <button
                   type="button"
-                  className="remove-img-btn"
-                  onClick={() => setSelectedImage(null)}
+                  className="upload-device-btn"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={isUploadingCustom || publishStatus === 'publishing'}
                 >
-                  Remove Image
+                  {isUploadingCustom ? 'Uploading...' : '📁 Upload from Device'}
                 </button>
+                {selectedImage && (
+                  <button
+                    type="button"
+                    className="remove-visual-btn"
+                    onClick={() => setSelectedImage(null)}
+                    disabled={publishStatus === 'publishing'}
+                  >
+                    ✕ Remove Visual (Text-Only)
+                  </button>
+                )}
               </div>
-              <img src={selectedImage} alt="AI Visual Concept" className="preview-img" />
             </div>
-          )}
+
+            {/* Split-Screen Visual Cards */}
+            {(aiImageUrl || webImageUrl || customImageUrl) ? (
+              <div className="media-split-grid">
+                {/* Left: AI Generated Visual */}
+                {aiImageUrl && (
+                  <div
+                    className={`media-option-card ${selectedImage === aiImageUrl ? 'selected' : ''}`}
+                    onClick={() => setSelectedImage(aiImageUrl)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedImage(aiImageUrl); }}
+                    aria-label="Select AI Generated Visual"
+                  >
+                    <div className="media-card-badge">
+                      <span className="badge-tag ai-tag">✨ AI Generated Visual</span>
+                      <span className="badge-status">
+                        {selectedImage === aiImageUrl ? '✓ Selected' : 'Select'}
+                      </span>
+                    </div>
+                    <img src={aiImageUrl} alt="AI Generated Concept" className="media-preview-img" />
+                  </div>
+                )}
+
+                {/* Right: Web-Sourced Visual */}
+                {webImageUrl && (
+                  <div
+                    className={`media-option-card ${selectedImage === webImageUrl ? 'selected' : ''}`}
+                    onClick={() => setSelectedImage(webImageUrl)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedImage(webImageUrl); }}
+                    aria-label="Select Web-Sourced Visual"
+                  >
+                    <div className="media-card-badge">
+                      <span className="badge-tag web-tag">🌐 Web-Sourced Visual</span>
+                      <span className="badge-status">
+                        {selectedImage === webImageUrl ? '✓ Selected' : 'Select'}
+                      </span>
+                    </div>
+                    <img src={webImageUrl} alt="Web Sourced Reference" className="media-preview-img" />
+                  </div>
+                )}
+
+                {/* Custom Device Upload (if present) */}
+                {customImageUrl && (
+                  <div
+                    className={`media-option-card ${selectedImage === customImageUrl ? 'selected' : ''}`}
+                    onClick={() => setSelectedImage(customImageUrl)}
+                    role="button"
+                    tabIndex={0}
+                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedImage(customImageUrl); }}
+                    aria-label="Select Device Uploaded Visual"
+                  >
+                    <div className="media-card-badge">
+                      <span className="badge-tag custom-tag">📱 Device Upload</span>
+                      <span className="badge-status">
+                        {selectedImage === customImageUrl ? '✓ Selected' : 'Select'}
+                      </span>
+                    </div>
+                    <img src={customImageUrl} alt="Device Upload Preview" className="media-preview-img" />
+                  </div>
+                )}
+              </div>
+            ) : null}
+
+            {!selectedImage && (
+              <div className="text-only-notice">
+                ℹ️ <strong>Text-only post:</strong> No visual is currently selected. This post will be published to the feed without an image.
+              </div>
+            )}
+          </div>
 
           <div className="publish-actions-row">
             <button

@@ -325,85 +325,151 @@ async def critique_node(state: AgentState) -> Dict[str, Any]:
         "approx_tokens": approx_tokens
     }
 
-# --- Node 6: Media Director (Pollinations + Cloudinary) ---
+# --- Node 6: Media Director (Pollinations AI + Tavily Web Image + Cloudinary) ---
 async def media_director_node(state: AgentState) -> Dict[str, Any]:
     want_image = state.get("want_image", False)
     if not want_image:
-        return {"image_url": None, "image_prompt": None}
+        return {
+            "image_url": None,
+            "image_prompt": None,
+            "ai_image_url": None,
+            "web_image_url": None,
+            "ai_image_prompt": None,
+            "web_image_query": None
+        }
 
     query = state.get("query", "")
     draft_post = state.get("draft_post", "")
     llm_calls = state.get("llm_calls", 0) + 1
     approx_tokens = state.get("approx_tokens", 0)
 
-    # 1. Refine image prompt
-    prompt_generator_sys = (
-        "You are an art director for a modern social media platform. "
-        "Create a clean, visually striking, photorealistic image description in descriptive English (under 25 words) "
-        "illustrating the core concept of the post. Avoid text, words, watermarks, or violence. "
-        "Always write the prompt in English, regardless of the input language. "
-        "Respond ONLY with the English image description."
+    # 1. Internal Filtering: Extract clean English AI prompt and Web search query
+    sys_prompt = (
+        "You are an art director and visual research specialist for a social media platform. "
+        "Given a research topic and post summary, extract clean search parameters in English:\n"
+        '1. "ai_image_prompt": A detailed, descriptive photography prompt in English tailored for image generation models (under 30 words). Focus on visual elements, lighting, style, and atmosphere. Avoid text, words, watermarks, or violence.\n'
+        '2. "web_image_query": A concise, keyword-focused English search query (2-6 keywords) optimized for web image search to find real, authentic photos.\n'
+        "Respond ONLY with a valid JSON object matching:\n"
+        '{"ai_image_prompt": "...", "web_image_query": "..."}'
     )
-    image_prompt = ""
+    user_prompt = f"Topic: {query}\nDraft Summary: {draft_post[:200]}"
+
+    ai_image_prompt = ""
+    web_image_query = ""
     try:
-        llm = get_llm(temperature=0.7, max_tokens=500)
+        llm = get_llm(temperature=0.3, max_tokens=500)
         res = await llm.ainvoke([
-            SystemMessage(content=prompt_generator_sys),
-            HumanMessage(content=f"Post Topic: {query}\nSummary: {draft_post[:150]}")
+            SystemMessage(content=sys_prompt),
+            HumanMessage(content=user_prompt)
         ])
         approx_tokens += 300
-        candidate = res.content.strip().replace('"', '').replace('\n', ' ')
-        if candidate:
-            image_prompt = candidate
+        content = res.content.strip()
+        if "{" in content and "}" in content:
+            json_str = content[content.find("{"):content.rfind("}") + 1]
+            data = json.loads(json_str)
+            ai_image_prompt = str(data.get("ai_image_prompt", "")).strip().replace('"', '').replace('\n', ' ')
+            web_image_query = str(data.get("web_image_query", "")).strip().replace('"', '').replace('\n', ' ')
     except Exception as e:
-        logger.warning(f"Image prompt generation error: {e}")
+        logger.warning(f"Media parameter extraction error: {e}")
 
-    if not image_prompt:
-        image_prompt = f"Photorealistic editorial illustration representing {query}"
+    if not ai_image_prompt:
+        ai_image_prompt = f"Photorealistic editorial illustration representing {query}"
+    if not web_image_query:
+        web_image_query = query
 
-    # 2. Call Pollinations API server-side
+    # 2. Fetch AI Image via Pollinations and upload to Cloudinary
     seed = random.randint(1, 999999)
-    encoded_prompt = urllib.parse.quote(image_prompt)
-    pollinations_url = f"https://gen.pollinations.ai/image/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
+    encoded_ai_prompt = urllib.parse.quote(ai_image_prompt)
+    pollinations_url = f"https://gen.pollinations.ai/image/{encoded_ai_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
     headers = {"Authorization": f"Bearer {POLLINATIONS_API_KEY}"} if POLLINATIONS_API_KEY else {}
 
-    image_bytes = None
+    ai_image_bytes = None
     try:
         async with httpx.AsyncClient(timeout=25.0, follow_redirects=True) as client:
             resp = await client.get(pollinations_url, headers=headers)
             if resp.status_code == 200 and resp.content and len(resp.content) > 10 and resp.content.strip() != b"{}":
-                image_bytes = resp.content
+                ai_image_bytes = resp.content
             else:
-                # Fallback to secondary endpoint
-                alt_url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
+                alt_url = f"https://image.pollinations.ai/prompt/{encoded_ai_prompt}?width=1024&height=1024&nologo=true&seed={seed}"
                 alt_resp = await client.get(alt_url, headers=headers)
                 if alt_resp.status_code == 200 and alt_resp.content and len(alt_resp.content) > 10 and alt_resp.content.strip() != b"{}":
-                    image_bytes = alt_resp.content
+                    ai_image_bytes = alt_resp.content
                     pollinations_url = alt_url
     except Exception as e:
         logger.warning(f"Pollinations fetch error: {e}")
-        image_bytes = None
 
-    # 3. Upload bytes to Cloudinary
-    cloudinary_url = None
-    if image_bytes:
+    ai_image_url = None
+    if ai_image_bytes:
         try:
-            upload_result = await run_in_threadpool(
+            upload_res = await run_in_threadpool(
                 uploader.upload,
-                io.BytesIO(image_bytes),
+                io.BytesIO(ai_image_bytes),
                 folder="ai_studio_generated",
                 resource_type="image"
             )
-            cloudinary_url = upload_result.get("secure_url")
+            ai_image_url = upload_res.get("secure_url")
         except Exception as e:
-            logger.warning(f"Cloudinary upload error: {e}")
-            cloudinary_url = pollinations_url
+            logger.warning(f"Cloudinary AI image upload error: {e}")
+            ai_image_url = pollinations_url
     elif pollinations_url:
-        cloudinary_url = pollinations_url
+        ai_image_url = pollinations_url
+
+    # 3. Fetch Web Image via Tavily and upload to Cloudinary
+    web_image_url = None
+    try:
+        tavily_searcher = TavilySearch(max_results=3, include_images=True)
+        raw_web_res = await tavily_searcher.ainvoke(web_image_query)
+        images_list = []
+        if isinstance(raw_web_res, dict):
+            images_list = raw_web_res.get("images", [])
+        elif hasattr(raw_web_res, "images"):
+            images_list = getattr(raw_web_res, "images", [])
+
+        for candidate in images_list:
+            candidate_url = candidate if isinstance(candidate, str) else candidate.get("url") if isinstance(candidate, dict) else None
+            if not candidate_url or not candidate_url.startswith("http"):
+                continue
+
+            # Skip social network widget URLs that return HTML instead of raw images
+            if any(domain in candidate_url for domain in ["instagram.com", "tiktok.com", "fbsbx.com"]):
+                continue
+
+            try:
+                async with httpx.AsyncClient(timeout=12.0, follow_redirects=True) as client:
+                    web_resp = await client.get(
+                        candidate_url,
+                        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+                    )
+                    content_type = web_resp.headers.get("content-type", "").lower()
+                    if web_resp.status_code == 200 and "image/" in content_type and len(web_resp.content) > 100:
+                        try:
+                            web_upload_res = await run_in_threadpool(
+                                uploader.upload,
+                                io.BytesIO(web_resp.content),
+                                folder="ai_studio_web_sources",
+                                resource_type="image"
+                            )
+                            web_image_url = web_upload_res.get("secure_url")
+                        except Exception as up_err:
+                            logger.warning(f"Cloudinary upload error for web image: {up_err}")
+                            web_image_url = candidate_url
+
+                        if web_image_url:
+                            break
+            except Exception as fetch_err:
+                logger.warning(f"Error fetching candidate web image {candidate_url}: {fetch_err}")
+                continue
+    except Exception as e:
+        logger.warning(f"Tavily web image lookup error: {e}")
+        web_image_url = None
 
     return {
-        "image_prompt": image_prompt,
-        "image_url": cloudinary_url,
+        "ai_image_prompt": ai_image_prompt,
+        "web_image_query": web_image_query,
+        "ai_image_url": ai_image_url,
+        "web_image_url": web_image_url,
+        "image_url": ai_image_url or web_image_url,
+        "image_prompt": ai_image_prompt,
         "llm_calls": llm_calls,
         "approx_tokens": approx_tokens
     }
@@ -418,6 +484,8 @@ async def approval_node(state: AgentState) -> Dict[str, Any]:
         "verdict": state.get("verdict"),
         "draft_post": state.get("draft_post"),
         "image_url": state.get("image_url"),
+        "ai_image_url": state.get("ai_image_url"),
+        "web_image_url": state.get("web_image_url"),
         "critique_count": state.get("critique_count", 0),
         "internal_docs": state.get("internal_docs", []),
         "web_docs": state.get("web_docs", [])
@@ -429,7 +497,7 @@ async def approval_node(state: AgentState) -> Dict[str, Any]:
     # Extract user decision upon resumption
     user_action = decision.get("user_action", "cancel")
     edited_text = decision.get("edited_text") or state.get("draft_post")
-    selected_image = decision.get("selected_image_url") or state.get("image_url")
+    selected_image = decision.get("selected_image_url")
 
     return {
         "approval_status": "approved" if user_action == "approve" else "cancelled",
@@ -449,7 +517,10 @@ async def publish_node(state: AgentState, config: Optional[RunnableConfig] = Non
 
     user_uuid = uuid.UUID(user_id_str)
     caption = state.get("edited_text") or state.get("draft_post") or ""
-    image_url = state.get("selected_image_url") or state.get("image_url") or ""
+    # selected_image_url can be None (user chose text-only post)
+    image_url = state.get("selected_image_url")
+    if image_url is None and "selected_image_url" not in state:
+        image_url = state.get("image_url") or ""
 
     # Security: Ensure image URL originates from Cloudinary domain if provided
     if image_url and "cloudinary.com" not in image_url and not image_url.startswith("http"):
@@ -460,9 +531,9 @@ async def publish_node(state: AgentState, config: Optional[RunnableConfig] = Non
     async def _insert_post(s):
         new_post = post(
             caption=caption,
-            url=image_url or "https://res.cloudinary.com/demo/image/upload/sample.jpg",
-            file_type="image/jpeg",
-            file_name=f"ai_studio_{uuid.uuid4().hex[:8]}",
+            url=image_url or "",
+            file_type="image/jpeg" if image_url else "text/plain",
+            file_name=f"ai_studio_{uuid.uuid4().hex[:8]}" if image_url else f"ai_studio_text_{uuid.uuid4().hex[:8]}",
             user_id=user_uuid
         )
         s.add(new_post)

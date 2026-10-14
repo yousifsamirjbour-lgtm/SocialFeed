@@ -1,3 +1,4 @@
+import io
 import pytest
 import json
 import uuid
@@ -357,4 +358,94 @@ async def test_media_director_defensive_empty_prompt_and_dynamic_seed():
                 assert res["image_url"] == "https://res.cloudinary.com/test-cloud/image/upload/custom.jpg"
                 assert "gen.pollinations.ai/image/" in captured_url
                 assert "seed=42" not in captured_url
+
+@pytest.mark.asyncio
+async def test_media_director_dual_visual_generation():
+    """Verify media_director generates both ai_image_url and web_image_url."""
+    from backend.agents.nodes import media_director_node
+
+    mock_llm = MagicMock()
+    mock_llm.ainvoke = AsyncMock(return_value=AIMessage(content=json.dumps({
+        "ai_image_prompt": "Cinematic photo of Mbappe and Yamal",
+        "web_image_query": "Mbappe Yamal 2026"
+    })))
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.headers = {"content-type": "image/jpeg"}
+    mock_resp.content = b"fake-image-bytes-data-stream" * 10
+
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=None)
+
+    mock_tavily = MagicMock()
+    mock_tavily.ainvoke = AsyncMock(return_value={
+        "images": ["https://images.example.com/web_photo.jpg"]
+    })
+
+    with patch("backend.agents.nodes.get_llm", return_value=mock_llm):
+        with patch("backend.agents.nodes.httpx.AsyncClient", return_value=mock_client):
+            with patch("backend.agents.nodes.TavilySearch", return_value=mock_tavily):
+                with patch("backend.agents.nodes.uploader.upload", return_value={"secure_url": "https://res.cloudinary.com/test-cloud/image/upload/dual.jpg"}):
+                    state: AgentState = {
+                        "want_image": True,
+                        "query": "Mbappe vs Yamal",
+                        "draft_post": "Detailed post."
+                    }
+                    res = await media_director_node(state)
+                    assert res["ai_image_url"] == "https://res.cloudinary.com/test-cloud/image/upload/dual.jpg"
+                    assert res["web_image_url"] == "https://res.cloudinary.com/test-cloud/image/upload/dual.jpg"
+                    assert res["image_url"] is not None
+                    assert res["ai_image_prompt"] == "Cinematic photo of Mbappe and Yamal"
+                    assert res["web_image_query"] == "Mbappe Yamal 2026"
+
+@pytest.mark.asyncio
+async def test_upload_research_image_endpoint(client, auth_headers):
+    """Verify POST /api/agent/research/upload-image works with valid file and rejects bad types."""
+    # 1. Invalid mime type
+    bad_file = ("test.txt", io.BytesIO(b"hello world"), "text/plain")
+    res_bad = await client.post(
+        "/api/agent/research/upload-image",
+        headers=auth_headers,
+        files={"file": bad_file}
+    )
+    assert res_bad.status_code == 415
+
+    # 2. Empty file
+    empty_file = ("empty.png", io.BytesIO(b""), "image/png")
+    res_empty = await client.post(
+        "/api/agent/research/upload-image",
+        headers=auth_headers,
+        files={"file": empty_file}
+    )
+    assert res_empty.status_code == 400
+
+    # 3. Valid file with mocked Cloudinary
+    good_file = ("valid.jpg", io.BytesIO(b"fake-image-bytes-ok"), "image/jpeg")
+    with patch("backend.api.ai_studio.uploader.upload", return_value={"secure_url": "https://res.cloudinary.com/test/custom_device.jpg"}):
+        res_ok = await client.post(
+            "/api/agent/research/upload-image",
+            headers=auth_headers,
+            files={"file": good_file}
+        )
+        assert res_ok.status_code == 200
+        assert res_ok.json()["image_url"] == "https://res.cloudinary.com/test/custom_device.jpg"
+
+@pytest.mark.asyncio
+async def test_publish_text_only_post(db_session, test_user):
+    """Verify publish_node handles text-only posts when selected_image_url is None."""
+    from backend.agents.nodes import publish_node
+    state: AgentState = {
+        "approval_status": "approved",
+        "user_id": str(test_user.id),
+        "edited_text": "Text-only verified post summary.",
+        "selected_image_url": None,
+        "image_url": None
+    }
+    config = {"configurable": {"session": db_session}}
+    res = await publish_node(state, config=config)
+    assert res["published_post_id"] is not None
+
 

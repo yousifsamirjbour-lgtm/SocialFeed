@@ -1,14 +1,17 @@
 import os
+import io
 import json
 import uuid
 from typing import Optional, AsyncGenerator
-from fastapi import APIRouter, HTTPException, Depends, status
+from fastapi import APIRouter, HTTPException, Depends, status, File, UploadFile
 from fastapi.responses import StreamingResponse
+from fastapi.concurrency import run_in_threadpool
 from pydantic import BaseModel, Field, field_validator
 from langgraph.types import Command
 
 from backend.models.db import User, get_async_session
 from backend.core.users import current_active_user
+from backend.core.images import uploader
 from backend.agents.graph import research_graph
 from backend.agents.rate_limit import (
     cost_guard,
@@ -175,8 +178,12 @@ async def start_research(
                     elif node_name == "media_director":
                         yield format_sse("step", {
                             "name": "approval_ready",
-                            "status": "Visual generated. Waiting for your review and approval...",
-                            "partial": {"image_url": node_output.get("image_url")}
+                            "status": "Visuals retrieved & generated. Waiting for your review and approval...",
+                            "partial": {
+                                "image_url": node_output.get("image_url"),
+                                "ai_image_url": node_output.get("ai_image_url"),
+                                "web_image_url": node_output.get("web_image_url")
+                            }
                         })
 
             # Fetch graph checkpoint state to confirm interrupt payload
@@ -193,6 +200,8 @@ async def start_research(
                 "verdict": interrupt_val.get("verdict") or last_state.get("verdict"),
                 "draft_post": interrupt_val.get("draft_post") or last_state.get("draft_post"),
                 "image_url": interrupt_val.get("image_url") or last_state.get("image_url"),
+                "ai_image_url": interrupt_val.get("ai_image_url") or last_state.get("ai_image_url"),
+                "web_image_url": interrupt_val.get("web_image_url") or last_state.get("web_image_url"),
                 "critique_count": last_state.get("critique_count", 0),
                 "internal_docs": last_state.get("internal_docs", []),
                 "web_docs": last_state.get("web_docs", []),
@@ -300,3 +309,46 @@ async def cancel_research(
         pass
 
     return {"message": "Research session cancelled.", "status": "cancelled"}
+
+@router.post("/upload-image")
+async def upload_research_image(
+    file: UploadFile = File(...),
+    user: User = Depends(current_active_user)
+):
+    """
+    Allows uploading a custom image from device to Cloudinary for use in an AI Studio post.
+    """
+    allowed_types = ["image/jpeg", "image/png", "image/webp", "image/gif"]
+    if file.content_type not in allowed_types:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Unsupported image format. Please upload JPEG, PNG, WebP, or GIF."
+        )
+
+    file_bytes = await file.read()
+    if len(file_bytes) == 0:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="The uploaded file is empty."
+        )
+    if len(file_bytes) > 15 * 1024 * 1024:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail="Image exceeds maximum size limit of 15MB."
+        )
+
+    try:
+        result = await run_in_threadpool(
+            uploader.upload,
+            io.BytesIO(file_bytes),
+            folder="ai_studio_uploads",
+            resource_type="image"
+        )
+        secure_url = result.get("secure_url")
+        return {"image_url": secure_url}
+    except Exception as e:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to upload image: {str(e)}"
+        )
+
