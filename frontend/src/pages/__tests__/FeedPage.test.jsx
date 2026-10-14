@@ -97,7 +97,7 @@ describe('FeedPage', () => {
     const navigateToAiStudio = vi.fn();
     render(<FeedPage {...defaultProps} navigateToAiStudio={navigateToAiStudio} />);
 
-    expect(screen.getByText('AI Studio: Fact-Check & Research')).toBeInTheDocument();
+    expect(screen.getByText('AI Studio')).toBeInTheDocument();
     expect(screen.getByText('New')).toBeInTheDocument();
     expect(screen.getByText(/Analyze discussions, verify facts with live web search/i)).toBeInTheDocument();
 

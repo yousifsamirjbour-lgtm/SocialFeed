@@ -38,7 +38,7 @@ const FeedPage = ({
             </div>
             <div className="ai-studio-text-block">
               <div className="ai-studio-prompt-title">
-                <span>AI Studio: Fact-Check & Research</span>
+                <span>AI Studio</span>
                 <span className="ai-studio-new-badge">New</span>
               </div>
               <div className="ai-studio-prompt-sub">
