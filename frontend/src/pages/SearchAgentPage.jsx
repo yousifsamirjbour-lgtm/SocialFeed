@@ -1,16 +1,45 @@
 import { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import Cropper from 'react-easy-crop';
 import './SearchAgentPage.css';
 
 const DEFAULT_STEPS = [
-  { id: 'retrieve_internal', label: '1. Community Search', description: 'Searching discussions across SocialFeed' },
-  { id: 'grade_documents', label: '2. Relevance Check', description: 'Evaluating community content completeness' },
-  { id: 'web_search', label: '3. Web Verification', description: 'Checking live internet facts & citations' },
-  { id: 'draft', label: '4. Synthesis & Drafting', description: 'Combining community opinions with web facts' },
-  { id: 'critique', label: '5. Editor Critique', description: 'Editor AI checking accuracy & tone' },
-  { id: 'approval_ready', label: '6. Human Approval', description: 'Your final review and publication control' }
+  { id: 'retrieve_internal', label: '1. Community', fullLabel: 'Community Search' },
+  { id: 'grade_documents', label: '2. Relevance', fullLabel: 'Relevance Check' },
+  { id: 'web_search', label: '3. Web Facts', fullLabel: 'Web Verification' },
+  { id: 'draft', label: '4. Drafting', fullLabel: 'Synthesis & Drafting' },
+  { id: 'critique', label: '5. Critique', fullLabel: 'Editor Critique' },
+  { id: 'approval_ready', label: '6. Approval', fullLabel: 'Human Approval' }
 ];
+
+const getCroppedImg = async (imageSrc, pixelCrop) => {
+  const image = new Image();
+  image.crossOrigin = 'anonymous';
+  image.src = imageSrc;
+  await new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = (e) => reject(new Error('Failed to load image for cropping: ' + e));
+  });
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(pixelCrop.width);
+  canvas.height = Math.round(pixelCrop.height);
+  const ctx = canvas.getContext('2d');
+  ctx.drawImage(
+    image,
+    pixelCrop.x, pixelCrop.y, pixelCrop.width, pixelCrop.height,
+    0, 0, pixelCrop.width, pixelCrop.height
+  );
+  return new Promise((resolve, reject) => {
+    canvas.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('Canvas export failed'));
+        return;
+      }
+      resolve(new File([blob], 'ai-studio-cropped.jpg', { type: 'image/jpeg' }));
+    }, 'image/jpeg', 0.92);
+  });
+};
 
 const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFeed, onPostPublished }) => {
   const safeInitialQuery = typeof initialQuery === 'string' ? initialQuery : '';
@@ -30,6 +59,10 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
   const [webImageUrl, setWebImageUrl] = useState(null);
   const [customImageUrl, setCustomImageUrl] = useState(null);
   const [selectedImage, setSelectedImage] = useState(null);
+  const [crop, setCrop] = useState({ x: 0, y: 0 });
+  const [zoom, setZoom] = useState(1);
+  const [aspect, setAspect] = useState(1);
+  const [croppedAreaPixels, setCroppedAreaPixels] = useState(null);
   const [isUploadingCustom, setIsUploadingCustom] = useState(false);
   const [publishStatus, setPublishStatus] = useState('idle'); // 'idle' | 'publishing' | 'published' | 'cancelled'
   const [error, setError] = useState('');
@@ -71,6 +104,9 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
       if (data.image_url) {
         setCustomImageUrl(data.image_url);
         setSelectedImage(data.image_url);
+        setCrop({ x: 0, y: 0 });
+        setZoom(1);
+        setCroppedAreaPixels(null);
       }
     } catch (err) {
       setError(err.message || 'Error uploading image from device.');
@@ -96,6 +132,9 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
     setWebImageUrl(null);
     setCustomImageUrl(null);
     setSelectedImage(null);
+    setCrop({ x: 0, y: 0 });
+    setZoom(1);
+    setCroppedAreaPixels(null);
     setPublishStatus('idle');
     setCompletedSteps(new Set());
     setCurrentStepId('retrieve_internal');
@@ -234,6 +273,33 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
     setPublishStatus('publishing');
     setError('');
 
+    let finalImageUrl = selectedImage;
+
+    // If an image was selected and cropped by the user, export the cropped image and upload to Cloudinary
+    if (selectedImage && croppedAreaPixels && (zoom > 1 || crop.x !== 0 || crop.y !== 0)) {
+      try {
+        const croppedFile = await getCroppedImg(selectedImage, croppedAreaPixels);
+        const token = localStorage.getItem('token');
+        const formData = new FormData();
+        formData.append('file', croppedFile);
+        const uploadRes = await fetch('/api/agent/research/upload-image', {
+          method: 'POST',
+          headers: {
+            'Authorization': token ? `Bearer ${token}` : ''
+          },
+          body: formData
+        });
+        if (uploadRes.ok) {
+          const uploadData = await uploadRes.json();
+          if (uploadData.image_url) {
+            finalImageUrl = uploadData.image_url;
+          }
+        }
+      } catch (cropErr) {
+        console.warn('Could not process cropped image, falling back to original:', cropErr);
+      }
+    }
+
     const token = localStorage.getItem('token');
     try {
       const response = await fetch(`/api/agent/research/${threadId}/approve`, {
@@ -245,7 +311,7 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
         body: JSON.stringify({
           user_action: 'approve',
           edited_text: editedPost,
-          selected_image_url: selectedImage
+          selected_image_url: finalImageUrl
         })
       });
 
@@ -366,27 +432,57 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
             <span className="ai-stepper-status-badge">{statusText}</span>
           </div>
 
-          <div className="ai-stepper-steps">
-            {DEFAULT_STEPS.map((step) => {
+          {/* Desktop Stepper: Single Row */}
+          <div className="stepper-desktop-row" aria-label="Desktop Stepper">
+            <div className="stepper-track-bg" />
+            <div
+              className="stepper-track-fill"
+              style={{
+                width: `${Math.min(100, Math.max(0, (completedSteps.size / (DEFAULT_STEPS.length - 1)) * 100))}%`
+              }}
+            />
+            {DEFAULT_STEPS.map((step, idx) => {
               const isCompleted = completedSteps.has(step.id);
               const isCurrent = currentStepId === step.id && isLoading;
-              
-              let stepClass = 'stepper-step pending';
-              if (isCompleted) stepClass = 'stepper-step completed';
-              if (isCurrent) stepClass = 'stepper-step active';
+              let stepClass = 'mini-step pending';
+              if (isCompleted) stepClass = 'mini-step completed';
+              if (isCurrent) stepClass = 'mini-step active';
 
               return (
                 <div key={step.id} className={stepClass}>
-                  <div className="stepper-dot">
-                    {isCompleted ? '✓' : isCurrent ? '●' : '○'}
+                  <div className="mini-step-dot" title={step.fullLabel || step.label}>
+                    {isCompleted ? '✓' : isCurrent ? '●' : idx + 1}
                   </div>
-                  <div className="stepper-content">
-                    <span className="stepper-label">{step.label}</span>
-                    <span className="stepper-desc">{step.description}</span>
-                  </div>
+                  <span className="mini-step-label">{step.label}</span>
                 </div>
               );
             })}
+          </div>
+
+          {/* Mobile Stepper: Compact Single-Line Progress Bar */}
+          <div className="stepper-mobile-view" aria-label="Mobile Stepper">
+            <div className="stepper-mobile-header">
+              <span className="stepper-mobile-step-title">
+                {currentStepId ? (
+                  <>
+                    Step {Math.max(1, DEFAULT_STEPS.findIndex(s => s.id === currentStepId) + 1)} of 6: {' '}
+                    <strong>{DEFAULT_STEPS.find(s => s.id === currentStepId)?.label || 'Researching'}</strong>
+                  </>
+                ) : (
+                  'Step 1 of 6: 1. Community'
+                )}
+              </span>
+              <span className="stepper-mobile-pct">
+                {Math.round((completedSteps.size / DEFAULT_STEPS.length) * 100)}%
+              </span>
+            </div>
+            <div className="stepper-mobile-progress-track">
+              <div
+                className="stepper-mobile-progress-fill"
+                style={{ width: `${(completedSteps.size / DEFAULT_STEPS.length) * 100}%` }}
+              />
+            </div>
+            {statusText && <div className="stepper-mobile-status-text">{statusText}</div>}
           </div>
 
           {/* Self-Correction Wow Moment Badge */}
@@ -540,10 +636,22 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
                 {aiImageUrl && (
                   <div
                     className={`media-option-card ${selectedImage === aiImageUrl ? 'selected' : ''}`}
-                    onClick={() => setSelectedImage(aiImageUrl)}
+                    onClick={() => {
+                      setSelectedImage(aiImageUrl);
+                      setCrop({ x: 0, y: 0 });
+                      setZoom(1);
+                      setCroppedAreaPixels(null);
+                    }}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedImage(aiImageUrl); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelectedImage(aiImageUrl);
+                        setCrop({ x: 0, y: 0 });
+                        setZoom(1);
+                        setCroppedAreaPixels(null);
+                      }
+                    }}
                     aria-label="Select AI Generated Visual"
                   >
                     <div className="media-card-badge">
@@ -560,10 +668,22 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
                 {webImageUrl && (
                   <div
                     className={`media-option-card ${selectedImage === webImageUrl ? 'selected' : ''}`}
-                    onClick={() => setSelectedImage(webImageUrl)}
+                    onClick={() => {
+                      setSelectedImage(webImageUrl);
+                      setCrop({ x: 0, y: 0 });
+                      setZoom(1);
+                      setCroppedAreaPixels(null);
+                    }}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedImage(webImageUrl); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelectedImage(webImageUrl);
+                        setCrop({ x: 0, y: 0 });
+                        setZoom(1);
+                        setCroppedAreaPixels(null);
+                      }
+                    }}
                     aria-label="Select Web-Sourced Visual"
                   >
                     <div className="media-card-badge">
@@ -580,10 +700,22 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
                 {customImageUrl && (
                   <div
                     className={`media-option-card ${selectedImage === customImageUrl ? 'selected' : ''}`}
-                    onClick={() => setSelectedImage(customImageUrl)}
+                    onClick={() => {
+                      setSelectedImage(customImageUrl);
+                      setCrop({ x: 0, y: 0 });
+                      setZoom(1);
+                      setCroppedAreaPixels(null);
+                    }}
                     role="button"
                     tabIndex={0}
-                    onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') setSelectedImage(customImageUrl); }}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        setSelectedImage(customImageUrl);
+                        setCrop({ x: 0, y: 0 });
+                        setZoom(1);
+                        setCroppedAreaPixels(null);
+                      }
+                    }}
                     aria-label="Select Device Uploaded Visual"
                   >
                     <div className="media-card-badge">
@@ -597,6 +729,78 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
                 )}
               </div>
             ) : null}
+
+            {/* Interactive Crop & Framing Workspace */}
+            {selectedImage && (
+              <div className="crop-preview-wrapper" aria-label="Image Cropping Workspace">
+                <div className="crop-preview-header">
+                  <div className="crop-header-left">
+                    <span className="crop-header-title">📐 Adjust Framing & Zoom</span>
+                    <span className="crop-header-desc">Drag image to position and adjust framing before publishing.</span>
+                  </div>
+                  <div className="crop-aspect-buttons">
+                    <button
+                      type="button"
+                      className={`aspect-btn ${aspect === 1 ? 'active' : ''}`}
+                      onClick={() => setAspect(1)}
+                    >
+                      1:1 Square
+                    </button>
+                    <button
+                      type="button"
+                      className={`aspect-btn ${aspect === 4/3 ? 'active' : ''}`}
+                      onClick={() => setAspect(4/3)}
+                    >
+                      4:3 Classic
+                    </button>
+                    <button
+                      type="button"
+                      className={`aspect-btn ${aspect === 16/9 ? 'active' : ''}`}
+                      onClick={() => setAspect(16/9)}
+                    >
+                      16:9 Wide
+                    </button>
+                  </div>
+                </div>
+
+                <div className="crop-container" style={{ height: '280px', position: 'relative' }}>
+                  <Cropper
+                    image={selectedImage}
+                    crop={crop}
+                    zoom={zoom}
+                    aspect={aspect}
+                    onCropChange={setCrop}
+                    onZoomChange={setZoom}
+                    onCropComplete={(croppedArea, pixels) => setCroppedAreaPixels(pixels)}
+                    showGrid={true}
+                  />
+                </div>
+
+                <div className="crop-controls-row">
+                  <div className="zoom-slider-group">
+                    <label htmlFor="crop-zoom-slider">Zoom:</label>
+                    <input
+                      id="crop-zoom-slider"
+                      type="range"
+                      min={1}
+                      max={3}
+                      step={0.05}
+                      value={zoom}
+                      onChange={(e) => setZoom(Number(e.target.value))}
+                      aria-label="Zoom Image"
+                    />
+                    <span className="zoom-value">{zoom.toFixed(1)}x</span>
+                  </div>
+                  <button
+                    type="button"
+                    className="reset-framing-btn"
+                    onClick={() => { setCrop({ x: 0, y: 0 }); setZoom(1); }}
+                  >
+                    Reset Framing
+                  </button>
+                </div>
+              </div>
+            )}
 
             {!selectedImage && (
               <div className="text-only-notice">

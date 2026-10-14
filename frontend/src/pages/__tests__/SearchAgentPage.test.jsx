@@ -304,5 +304,112 @@ describe('SearchAgentPage (AI Studio)', () => {
       expect(screen.getByText('Post Successfully Published to Feed!')).toBeInTheDocument();
     });
   });
+
+  it('renders compact stepper with desktop row dots and mobile progress status', async () => {
+    const mockEvents = [
+      {
+        event: 'step',
+        data: { name: 'retrieve_internal', status: 'Reading what people on SocialFeed said about this...' }
+      },
+      {
+        event: 'approval_ready',
+        data: {
+          thread_id: 'thread-stepper-test',
+          query: 'Compact Stepper Test',
+          community_summary: 'Community summary',
+          web_summary: 'Web summary',
+          verdict: 'Verified / True',
+          draft_post: 'Draft post text',
+          internal_docs: [],
+          web_docs: []
+        }
+      }
+    ];
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      body: createMockSseStream(mockEvents)
+    }));
+
+    render(<SearchAgentPage initialQuery="Compact Stepper Test" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start Research' }));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText('Desktop Stepper')).toBeInTheDocument();
+      expect(screen.getByLabelText('Mobile Stepper')).toBeInTheDocument();
+    });
+
+    // Check step labels
+    expect(screen.getByText('1. Community')).toBeInTheDocument();
+    expect(screen.getByText('2. Relevance')).toBeInTheDocument();
+    expect(screen.getByText('3. Web Facts')).toBeInTheDocument();
+    expect(screen.getByText('4. Drafting')).toBeInTheDocument();
+    expect(screen.getByText('5. Critique')).toBeInTheDocument();
+    expect(screen.getAllByText('6. Approval').length).toBe(2);
+
+    // Check mobile step title indicator
+    expect(screen.getByText(/Step 6 of 6:/i)).toBeInTheDocument();
+  });
+
+  it('renders interactive crop and framing workspace with aspect ratios and zoom controls when image is selected', async () => {
+    const mockEvents = [
+      {
+        event: 'approval_ready',
+        data: {
+          thread_id: 'thread-crop-test',
+          query: 'Cropping test query',
+          community_summary: 'Community summary',
+          web_summary: 'Web summary',
+          verdict: 'Verified / True',
+          draft_post: 'Draft post text',
+          ai_image_url: 'https://res.cloudinary.com/test/crop_test.jpg',
+          web_image_url: null,
+          internal_docs: [],
+          web_docs: []
+        }
+      }
+    ];
+
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      body: createMockSseStream(mockEvents)
+    }));
+
+    render(<SearchAgentPage initialQuery="Cropping test query" />);
+    fireEvent.click(screen.getByRole('button', { name: 'Start Research' }));
+
+    // Wait for cropping workspace to appear since ai_image_url is selected by default
+    await waitFor(() => {
+      expect(screen.getByLabelText('Image Cropping Workspace')).toBeInTheDocument();
+      expect(screen.getByText('📐 Adjust Framing & Zoom')).toBeInTheDocument();
+    });
+
+    // Verify aspect ratio preset buttons
+    const squareBtn = screen.getByRole('button', { name: '1:1 Square' });
+    const classicBtn = screen.getByRole('button', { name: '4:3 Classic' });
+    const wideBtn = screen.getByRole('button', { name: '16:9 Wide' });
+
+    expect(squareBtn).toHaveClass('active');
+    expect(classicBtn).not.toHaveClass('active');
+    expect(wideBtn).not.toHaveClass('active');
+
+    // Click 16:9 Wide
+    fireEvent.click(wideBtn);
+    expect(wideBtn).toHaveClass('active');
+    expect(squareBtn).not.toHaveClass('active');
+
+    // Verify zoom slider interaction
+    const zoomSlider = screen.getByLabelText('Zoom Image');
+    expect(screen.getByText('1.0x')).toBeInTheDocument();
+
+    fireEvent.change(zoomSlider, { target: { value: '2.5' } });
+    expect(screen.getByText('2.5x')).toBeInTheDocument();
+
+    // Verify reset framing
+    const resetBtn = screen.getByRole('button', { name: 'Reset Framing' });
+    fireEvent.click(resetBtn);
+    expect(screen.getByText('1.0x')).toBeInTheDocument();
+  });
 });
+
 
