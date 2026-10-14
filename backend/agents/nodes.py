@@ -191,6 +191,7 @@ async def draft_node(state: AgentState) -> Dict[str, Any]:
         '2. "web_summary": A 2-3 sentence summary of verified facts with Markdown link citations [Source](url).\n'
         '3. "verdict": One of ["Verified / True", "False / Misleading", "Mixed / Nuanced", "Unverified / Subjective"].\n'
         '4. "draft_post": An engaging, professional, well-formatted 3-4 sentence post summarizing the findings.\n'
+        "Language Instruction: Write all JSON string values in the same language as the user's query/claim (e.g., if Arabic, respond in natural Arabic; if English, respond in English).\n"
         "Respond ONLY with the JSON object."
     )
 
@@ -210,26 +211,40 @@ async def draft_node(state: AgentState) -> Dict[str, Any]:
     )
 
     try:
-        llm = get_llm(temperature=0.2, max_tokens=550)
+        llm = get_llm(temperature=0.2, max_tokens=1200)
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message)
         ])
-        approx_tokens += 450
+        approx_tokens += 600
         content = response.content.strip()
-        if "{" in content and "}" in content:
-            json_str = content[content.find("{"):content.rfind("}") + 1]
-            data = json.loads(json_str)
-            return {
-                "community_summary": str(data.get("community_summary", "Community discussions summarized.")),
-                "web_summary": str(data.get("web_summary", "Web verification completed.")),
-                "verdict": str(data.get("verdict", "Mixed / Nuanced")),
-                "draft_post": str(data.get("draft_post", content)),
-                "llm_calls": llm_calls,
-                "approx_tokens": approx_tokens
-            }
-    except Exception:
-        pass
+        if "{" in content:
+            start_idx = content.find("{")
+            end_idx = content.rfind("}")
+            json_str = content[start_idx:end_idx + 1] if end_idx > start_idx else content[start_idx:] + "}"
+            data = None
+            try:
+                data = json.loads(json_str)
+            except Exception:
+                # Try repairing unclosed trailing string/bracket
+                for suffix in ['"}', '"\n}', '}']:
+                    try:
+                        data = json.loads(json_str + suffix)
+                        break
+                    except Exception:
+                        continue
+
+            if isinstance(data, dict):
+                return {
+                    "community_summary": str(data.get("community_summary", "Community discussions summarized.")),
+                    "web_summary": str(data.get("web_summary", "Web verification completed.")),
+                    "verdict": str(data.get("verdict", "Mixed / Nuanced")),
+                    "draft_post": str(data.get("draft_post", content)),
+                    "llm_calls": llm_calls,
+                    "approx_tokens": approx_tokens
+                }
+    except Exception as e:
+        logger.warning(f"Draft node LLM execution error: {e}")
 
     return {
         "community_summary": "Community members shared diverse perspectives on SocialFeed.",
@@ -265,7 +280,8 @@ async def critique_node(state: AgentState) -> Dict[str, Any]:
         "2. Toxic, derogatory, or inflammatory language.\n"
         "3. Missing attribution or one-sided bias.\n"
         "Respond ONLY with a JSON object:\n"
-        '{"passed": true/false, "feedback": "constructive 1-sentence correction if false, or empty if true"}'
+        '{"passed": true/false, "feedback": "constructive 1-sentence correction if false, or empty if true"}\n'
+        "Language Instruction: If feedback is provided, write it in the same language as the draft post."
     )
 
     user_message = (
@@ -274,7 +290,7 @@ async def critique_node(state: AgentState) -> Dict[str, Any]:
     )
 
     try:
-        llm = get_llm(temperature=0.0, max_tokens=150)
+        llm = get_llm(temperature=0.0, max_tokens=300)
         response = await llm.ainvoke([
             SystemMessage(content=system_prompt),
             HumanMessage(content=user_message)
@@ -293,8 +309,8 @@ async def critique_node(state: AgentState) -> Dict[str, Any]:
                 "llm_calls": llm_calls,
                 "approx_tokens": approx_tokens
             }
-    except Exception:
-        pass
+    except Exception as e:
+        logger.warning(f"Critique node LLM execution error: {e}")
 
     return {
         "critique_passed": True,
