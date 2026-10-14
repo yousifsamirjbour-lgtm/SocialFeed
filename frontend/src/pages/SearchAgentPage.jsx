@@ -3,7 +3,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import Cropper from 'react-easy-crop';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, CheckCircle2 } from 'lucide-react';
+import { Sparkles, CheckCircle2, ExternalLink } from 'lucide-react';
 import './SearchAgentPage.css';
 
 const DEFAULT_STEPS = [
@@ -244,13 +244,15 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
                 }
               } else if (eventType === 'approval_ready') {
                 setThreadId(parsed.thread_id || '');
+                const sourcesList = parsed.sources || parsed.web_docs || [];
                 setComparisonData({
                   query: parsed.query,
                   community_summary: parsed.community_summary,
                   web_summary: parsed.web_summary,
                   verdict: parsed.verdict,
                   internal_docs: parsed.internal_docs || [],
-                  web_docs: parsed.web_docs || []
+                  web_docs: sourcesList,
+                  sources: sourcesList
                 });
                 setEditedPost(parsed.draft_post || '');
                 
@@ -665,7 +667,7 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
               <div className="column-header">
                 <h4>🌐 Verified Reality & Web Citations</h4>
                 <span className="source-count">
-                  {comparisonData.web_docs?.length || 0} source(s) verified
+                  {(comparisonData.sources || comparisonData.web_docs)?.length || 0} source(s) verified
                 </span>
               </div>
               <div className="column-content">
@@ -688,6 +690,34 @@ const SearchAgentPage = ({ initialQuery = '', initialPostId = null, navigateToFe
                     {comparisonData.web_summary || ''}
                   </ReactMarkdown>
                 </div>
+
+                {/* Numbered List of Verified Web Sources & Citations */}
+                {((comparisonData.sources && comparisonData.sources.length > 0) || (comparisonData.web_docs && comparisonData.web_docs.length > 0)) && (
+                  <div className="web-citations-list" aria-label="Web Citations List">
+                    <span className="sources-title">Verified Sources & References:</span>
+                    <ol className="citations-ordered-list">
+                      {(comparisonData.sources || comparisonData.web_docs).map((source, idx) => (
+                        <li key={idx} className="citation-item">
+                          <span className="citation-number">[{idx + 1}]</span>
+                          {source.url ? (
+                            <a
+                              href={source.url}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="citation-link"
+                              title={source.url}
+                            >
+                              <span className="citation-title">{source.title || source.url}</span>
+                              <ExternalLink size={12} className="citation-external-icon" />
+                            </a>
+                          ) : (
+                            <span className="citation-title-plain">{source.title || 'General Knowledge'}</span>
+                          )}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
               </div>
             </div>
           </div>

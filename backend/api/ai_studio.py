@@ -204,7 +204,8 @@ async def start_research(
                 "web_image_url": interrupt_val.get("web_image_url") or last_state.get("web_image_url"),
                 "critique_count": last_state.get("critique_count", 0),
                 "internal_docs": last_state.get("internal_docs", []),
-                "web_docs": last_state.get("web_docs", []),
+                "web_docs": interrupt_val.get("sources") or interrupt_val.get("web_docs") or last_state.get("sources") or last_state.get("web_docs", []),
+                "sources": interrupt_val.get("sources") or interrupt_val.get("web_docs") or last_state.get("sources") or last_state.get("web_docs", []),
                 "user_id": user_id
             }
 

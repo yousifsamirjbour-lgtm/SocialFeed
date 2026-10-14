@@ -92,4 +92,25 @@ describe('FeedPage', () => {
     expect(screen.queryByText('First feed post')).not.toBeInTheDocument();
     expect(document.querySelector('.feed-container')).toBeInTheDocument();
   });
+
+  it('renders modern AI Studio entry banner and navigates when clicked', () => {
+    const navigateToAiStudio = vi.fn();
+    render(<FeedPage {...defaultProps} navigateToAiStudio={navigateToAiStudio} />);
+
+    expect(screen.getByText('AI Studio: Fact-Check & Research')).toBeInTheDocument();
+    expect(screen.getByText('New')).toBeInTheDocument();
+    expect(screen.getByText(/Analyze discussions, verify facts with live web search/i)).toBeInTheDocument();
+
+    const openBtn = screen.getByRole('button', { name: /Open Studio/i });
+    expect(openBtn).toBeInTheDocument();
+
+    fireEvent.click(openBtn);
+    expect(navigateToAiStudio).toHaveBeenCalledTimes(1);
+
+    // Also clicking the banner card itself triggers navigation
+    const banner = screen.getByLabelText('Open AI Studio Banner');
+    fireEvent.click(banner);
+    expect(navigateToAiStudio).toHaveBeenCalledTimes(2);
+  });
 });
+

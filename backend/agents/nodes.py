@@ -503,7 +503,8 @@ async def approval_node(state: AgentState) -> Dict[str, Any]:
         "web_image_url": state.get("web_image_url"),
         "critique_count": state.get("critique_count", 0),
         "internal_docs": state.get("internal_docs", []),
-        "web_docs": state.get("web_docs", [])
+        "web_docs": state.get("web_docs", []),
+        "sources": state.get("web_docs", [])
     }
 
     # Pause execution and wait for human decision via resume()

@@ -105,14 +105,21 @@ describe('SearchAgentPage (AI Studio)', () => {
       expect(screen.getByText('EVIDENCE VERDICT:')).toBeInTheDocument();
       expect(screen.getByText('Verified / True')).toBeInTheDocument();
       expect(screen.getByText(/Community members discussed quantum supremacy/i)).toBeInTheDocument();
-      expect(screen.getByText(/Qiskit Docs/i)).toBeInTheDocument();
+      expect(screen.getAllByText(/Qiskit Docs/i).length).toBeGreaterThanOrEqual(1);
     });
 
-    // Verify markdown link has security attributes
-    const link = screen.getByRole('link', { name: /Qiskit Docs/i });
-    expect(link).toHaveAttribute('href', 'https://qiskit.org');
-    expect(link).toHaveAttribute('target', '_blank');
-    expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    // Verify markdown link and web citation links have security attributes
+    const links = screen.getAllByRole('link', { name: /Qiskit Docs/i });
+    expect(links.length).toBeGreaterThanOrEqual(1);
+    links.forEach(link => {
+      expect(link).toHaveAttribute('href', 'https://qiskit.org');
+      expect(link).toHaveAttribute('target', '_blank');
+      expect(link).toHaveAttribute('rel', 'noopener noreferrer');
+    });
+
+    // Verify web citations list is rendered
+    expect(screen.getByLabelText('Web Citations List')).toBeInTheDocument();
+    expect(screen.getByText('Verified Sources & References:')).toBeInTheDocument();
 
     // Verify draft editor and approve button
     const textarea = screen.getByLabelText(/Post Caption \(Editable\)/i);

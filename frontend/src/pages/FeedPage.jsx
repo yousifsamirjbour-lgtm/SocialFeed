@@ -1,4 +1,5 @@
 import Cropper from 'react-easy-crop';
+import { Sparkles } from 'lucide-react';
 import PostCard from '../components/PostCard';
 
 const FeedPage = ({
@@ -29,15 +30,30 @@ const FeedPage = ({
           tabIndex={0}
           onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') navigateToAiStudio(); }}
           style={{ cursor: 'pointer' }}
+          aria-label="Open AI Studio Banner"
         >
           <div className="ai-studio-prompt-content">
-            <span className="ai-studio-sparkle">✨</span>
-            <div>
-              <div className="ai-studio-prompt-title">AI Studio: Fact-Check & Research</div>
-              <div className="ai-studio-prompt-sub">Analyze discussions, verify facts with live web search, and turn them into verified posts.</div>
+            <div className="ai-studio-icon-bubble">
+              <Sparkles className="ai-studio-sparkle-icon" size={18} />
+            </div>
+            <div className="ai-studio-text-block">
+              <div className="ai-studio-prompt-title">
+                <span>AI Studio: Fact-Check & Research</span>
+                <span className="ai-studio-new-badge">New</span>
+              </div>
+              <div className="ai-studio-prompt-sub">
+                Analyze discussions, verify facts with live web search, and turn them into verified posts.
+              </div>
             </div>
           </div>
-          <button type="button" className="ai-studio-prompt-btn" onClick={(e) => { e.stopPropagation(); navigateToAiStudio(); }}>Open Studio</button>
+          <button 
+            type="button" 
+            className="ai-studio-prompt-btn" 
+            onClick={(e) => { e.stopPropagation(); navigateToAiStudio(); }}
+          >
+            <Sparkles size={14} />
+            <span>Open Studio</span>
+          </button>
         </div>
       )}
 

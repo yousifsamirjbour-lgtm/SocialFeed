@@ -622,6 +622,77 @@
   color: #042f2e;
 }
 
+/* Numbered List of Verified Web Sources & Citations */
+.web-citations-list {
+  margin-top: 16px;
+  padding-top: 14px;
+  border-top: 1px solid rgba(226, 232, 240, 0.8);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.citations-ordered-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.citation-item {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.citation-number {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 11px;
+  font-weight: 700;
+  color: #64748b;
+  flex-shrink: 0;
+}
+
+.citation-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #2563eb;
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  word-break: break-word;
+  transition: color 0.15s;
+}
+
+.citation-link:hover {
+  color: #1d4ed8;
+  text-decoration: underline;
+}
+
+.citation-title {
+  color: inherit;
+}
+
+.citation-external-icon {
+  flex-shrink: 0;
+  opacity: 0.65;
+  transition: opacity 0.15s;
+}
+
+.citation-link:hover .citation-external-icon {
+  opacity: 1;
+}
+
+.citation-title-plain {
+  font-size: 13px;
+  color: #64748b;
+}
+
 /* ==========================================================================
    Post Editor & Approval Box
    ========================================================================== */
