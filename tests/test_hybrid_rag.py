@@ -324,5 +324,15 @@ async def test_summarization_query_docs_only_retrieval_and_grading(db_session, t
     next_node = route_after_grade(state)
     assert next_node == "generate_answer"
 
+@pytest.mark.asyncio
+async def test_gemini_embeddings_model_configuration():
+    from backend.agents.hybrid_retriever import get_embeddings_model
+
+    model = get_embeddings_model()
+    if model:
+        assert model.model == "models/gemini-embedding-001"
+        assert model.output_dimensionality == 768
+
+
 
 

@@ -17,8 +17,9 @@ def get_embeddings_model():
     try:
         from langchain_google_genai import GoogleGenerativeAIEmbeddings
         return GoogleGenerativeAIEmbeddings(
-            model="models/text-embedding-004",
-            google_api_key=api_key
+            model="models/gemini-embedding-001",
+            google_api_key=api_key,
+            output_dimensionality=768
         )
     except Exception as e:
         logger.warning(f"Could not initialize Google embeddings: {e}")
