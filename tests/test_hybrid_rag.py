@@ -248,4 +248,81 @@ async def test_hybrid_retriever_vector_fallback_sqlite(db_session, test_user):
     assert len(unified_results) >= 1
     assert unified_results[0]["filename"] == "hybrid_test.txt"
 
+@pytest.mark.asyncio
+async def test_is_summarization_query_detection():
+    from backend.agents.chat_nodes import is_summarization_query
+
+    # English positive cases
+    assert is_summarization_query("Summarize key findings from the uploaded document")
+    assert is_summarization_query("Can you give me an overview of the report?")
+    assert is_summarization_query("What is this document about?")
+    assert is_summarization_query("What are the main points and key takeaways?")
+    assert is_summarization_query("tl;dr of this file please")
+    assert is_summarization_query("Explain this document")
+
+    # Arabic positive cases
+    assert is_summarization_query("لخص أهم نتائج المستند المرفق")
+    assert is_summarization_query("ملخص التقرير المرفوع")
+    assert is_summarization_query("ما هي أهم النقاط في الملف؟")
+    assert is_summarization_query("خلاصة البحث وأهم الاستنتاجات")
+    assert is_summarization_query("عن ماذا يتحدث هذا المستند؟")
+
+    # Negative cases (specific questions)
+    assert not is_summarization_query("What was the exact revenue in 2024?")
+    assert not is_summarization_query("Who is the CEO mentioned on page 3?")
+    assert not is_summarization_query("كم بلغت الأرباح التشغيلية؟")
+
+@pytest.mark.asyncio
+async def test_summarization_query_docs_only_retrieval_and_grading(db_session, test_user):
+    from backend.agents.chat_nodes import retrieve_docs_node, grade_relevance_node
+    from backend.agents.chat_graph import route_after_grade
+
+    session_id = uuid.uuid4()
+    # Add document chunks
+    c1 = DocumentChunk(
+        user_id=test_user.id,
+        chat_session_id=session_id,
+        filename="project_proposal.pdf",
+        page_number=1,
+        chunk_index=0,
+        content="Section 1: Background. This project modernizes social feed architecture.",
+        embedding=None
+    )
+    c2 = DocumentChunk(
+        user_id=test_user.id,
+        chat_session_id=session_id,
+        filename="project_proposal.pdf",
+        page_number=2,
+        chunk_index=1,
+        content="Section 2: Goals. Primary goal is zero latency streaming and hybrid search.",
+        embedding=None
+    )
+    db_session.add_all([c1, c2])
+    await db_session.commit()
+
+    # Query for summary in docs_only mode
+    state = {
+        "query": "Summarize key findings from the uploaded document",
+        "mode": "docs_only",
+        "user_id": str(test_user.id),
+        "chat_session_id": str(session_id),
+        "doc_count": 2
+    }
+    config = {"configurable": {"session": db_session}}
+
+    retrieval_res = await retrieve_docs_node(state, config=config)
+    assert len(retrieval_res["retrieved_docs"]) >= 2
+    assert retrieval_res["retrieved_docs"][0]["filename"] == "project_proposal.pdf"
+
+    state.update(retrieval_res)
+    grade_res = await grade_relevance_node(state)
+    assert grade_res["is_sufficient"] is True
+    assert "Document summarization/overview request" in grade_res["grade_reason"]
+
+    # Verify route_after_grade chooses generate_answer instead of generate_refusal
+    state.update(grade_res)
+    next_node = route_after_grade(state)
+    assert next_node == "generate_answer"
+
+
 

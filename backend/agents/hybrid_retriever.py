@@ -240,19 +240,79 @@ class PostgresDocumentRetriever:
 
         return results
 
-    async def retrieve(
+    async def retrieve_overview_chunks(
         self,
-        query: str,
         session: AsyncSession,
         user_id: Any,
         chat_session_id: Any,
         limit: int = 8
     ) -> List[Dict[str, Any]]:
         """
-        Unified Hybrid RAG retrieval entry point.
-        Executes FTS and Vector search concurrently and fuses them with Reciprocal Rank Fusion (RRF).
-        Falls back seamlessly if vector search is unavailable or returns 0 results.
+        Retrieves sequential document chunks for a session ordered by chunk_index ASC.
+        Ideal for document summarization, executive overview, or fallback when
+        conversational queries yield no exact lexical/semantic matches.
         """
+        results: List[Dict[str, Any]] = []
+        try:
+            user_uuid = uuid.UUID(str(user_id)) if not isinstance(user_id, uuid.UUID) else user_id
+            session_uuid = uuid.UUID(str(chat_session_id)) if not isinstance(chat_session_id, uuid.UUID) else chat_session_id
+        except (ValueError, TypeError) as e:
+            logger.warning(f"Invalid UUID for user_id or chat_session_id in overview: {e}")
+            return results
+
+        stmt = (
+            select(DocumentChunk)
+            .where(
+                DocumentChunk.user_id == user_uuid,
+                DocumentChunk.chat_session_id == session_uuid
+            )
+            .order_by(DocumentChunk.filename.asc(), DocumentChunk.chunk_index.asc())
+            .limit(limit)
+        )
+
+        try:
+            res = await session.execute(stmt)
+            chunks = res.scalars().all()
+            for idx, chunk in enumerate(chunks):
+                results.append({
+                    "id": str(chunk.id),
+                    "filename": chunk.filename,
+                    "page_number": chunk.page_number,
+                    "chunk_index": chunk.chunk_index,
+                    "content": chunk.content,
+                    "score": 1.0 - (idx * 0.05),
+                    "source_type": "document"
+                })
+        except Exception as e:
+            logger.error(f"Error fetching overview chunks: {e}")
+
+        return results
+
+    async def retrieve(
+        self,
+        query: str,
+        session: AsyncSession,
+        user_id: Any,
+        chat_session_id: Any,
+        limit: int = 8,
+        is_summary_query: bool = False
+    ) -> List[Dict[str, Any]]:
+        """
+        Unified Hybrid RAG retrieval entry point.
+        - If is_summary_query is True: directly fetches sequential overview chunks.
+        - Otherwise executes FTS and Vector search concurrently and fuses them with RRF.
+        - If search returns 0 results but session has chunks, falls back to overview chunks.
+        """
+        if is_summary_query:
+            overview_results = await self.retrieve_overview_chunks(
+                session=session,
+                user_id=user_id,
+                chat_session_id=chat_session_id,
+                limit=limit
+            )
+            if overview_results:
+                return overview_results
+
         fts_task = self.retrieve_fts(query, session, user_id, chat_session_id, limit=limit)
         vec_task = self.retrieve_vector(query, session, user_id, chat_session_id, limit=limit)
 
@@ -260,6 +320,15 @@ class PostgresDocumentRetriever:
 
         fts_clean = fts_results if isinstance(fts_results, list) else []
         vec_clean = vec_results if isinstance(vec_results, list) else []
+
+        if not vec_clean and not fts_clean:
+            # Fallback if specific search terms yielded no matches
+            return await self.retrieve_overview_chunks(
+                session=session,
+                user_id=user_id,
+                chat_session_id=chat_session_id,
+                limit=limit
+            )
 
         if not vec_clean:
             return fts_clean[:limit]
