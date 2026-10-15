@@ -27,6 +27,10 @@ class VoiceSession:
 
     def cancel_active_turn(self, turn_id: Optional[int] = None):
         """Cancels the running asyncio task for the current turn on barge-in/interruption."""
+        if turn_id is not None and self.active_turn_id is not None and self.active_turn_id > turn_id:
+            logger.info(f"Ignoring stale interrupt for turn {turn_id} (active turn is {self.active_turn_id})")
+            return
+
         if self.active_turn_task and not self.active_turn_task.done():
             logger.info(f"Interrupting active voice turn {self.active_turn_id} for user {self.user_id}")
             self.active_turn_task.cancel()

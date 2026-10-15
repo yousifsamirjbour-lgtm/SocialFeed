@@ -26,6 +26,7 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
   const vadRef = useRef(null);
   const playbackQueueRef = useRef(null);
   const turnIdRef = useRef(1);
+  const activeTurnIdRef = useRef(1);
   const isMutedRef = useRef(false);
 
   // Keep isMutedRef in sync
@@ -53,11 +54,17 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
     if (window.speechSynthesis) {
       window.speechSynthesis.cancel();
     }
+    if (vadRef.current) {
+      vadRef.current.reset();
+    }
+    if (workletNodeRef.current) {
+      workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+    }
 
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(JSON.stringify({
         type: 'interrupt',
-        turn_id: turnIdRef.current
+        turn_id: activeTurnIdRef.current || turnIdRef.current
       }));
     }
 
@@ -82,11 +89,18 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
     analyser.fftSize = 256;
     analyserNodeRef.current = analyser;
 
-    // Playback queue
+    // Playback queue with automatic reset on empty
     playbackQueueRef.current = new PlaybackQueue(ctx, {
       onPlaybackStart: () => setVoiceState('assistant_speaking'),
       onQueueEmpty: () => {
         setVoiceState('listening');
+        // Reset VAD and refresh pre-roll so user can speak the next turn immediately
+        if (vadRef.current) {
+          vadRef.current.reset();
+        }
+        if (workletNodeRef.current) {
+          workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+        }
       }
     });
 
@@ -127,6 +141,12 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
         setVoiceState('thinking');
         const currentTurn = turnIdRef.current;
         turnIdRef.current += 1;
+        activeTurnIdRef.current = currentTurn;
+
+        // Reset playback queue for the upcoming response
+        if (playbackQueueRef.current) {
+          playbackQueueRef.current.resetTurn();
+        }
 
         // Encode to 16kHz mono WAV
         const wavBuffer = encodeWAV(samples, 16000);
@@ -212,7 +232,7 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
           if (msg.seconds_left !== undefined) setSecondsLeft(msg.seconds_left);
           if (msg.turns_left !== undefined) setTurnsLeft(msg.turns_left);
         } else if (msg.type === 'audio_chunk') {
-          if (msg.turn_id === turnIdRef.current - 1 || msg.turn_id === turnIdRef.current) {
+          if (msg.turn_id === activeTurnIdRef.current || msg.turn_id === turnIdRef.current - 1) {
             setTranscripts((prev) => ({
               ...prev,
               currentAssistantText: `${prev.currentAssistantText} ${msg.text}`.trim()
@@ -230,10 +250,15 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
               const utterance = new SpeechSynthesisUtterance(msg.text);
               utterance.lang = /[\u0600-\u06FF]/.test(msg.text) ? 'ar-SA' : 'en-US';
               utterance.onstart = () => setVoiceState('assistant_speaking');
-              utterance.onend = () => setVoiceState('listening');
+              utterance.onend = () => {
+                setVoiceState('listening');
+                if (vadRef.current) vadRef.current.reset();
+                if (workletNodeRef.current) workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+              };
               utterance.onerror = (e) => {
                 console.warn('SpeechSynthesis error:', e);
                 setVoiceState('listening');
+                if (vadRef.current) vadRef.current.reset();
               };
               window.speechSynthesis.speak(utterance);
             } catch (synthErr) {
@@ -252,15 +277,38 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
           }));
           if (msg.seconds_left !== undefined) setSecondsLeft(msg.seconds_left);
           if (msg.turns_left !== undefined) setTurnsLeft(msg.turns_left);
-          setVoiceState('listening');
+
+          // If audio has already finished or queue is not playing, return to listening immediately
+          if (!playbackQueueRef.current?.isPlaying) {
+            setVoiceState('listening');
+            if (vadRef.current) {
+              vadRef.current.reset();
+            }
+            if (workletNodeRef.current) {
+              workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+            }
+          }
         } else if (msg.type === 'turn_discarded') {
           setVoiceState('listening');
+          if (vadRef.current) {
+            vadRef.current.reset();
+          }
+          if (workletNodeRef.current) {
+            workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+          }
         } else if (msg.type === 'quota_exceeded') {
           setErrorMessage(msg.message || 'Daily voice quota reached.');
           setConnectionStatus('error');
           setVoiceState('idle');
         } else if (msg.type === 'error') {
           setErrorMessage(msg.message || 'Voice communication issue occurred.');
+          setVoiceState('listening');
+          if (vadRef.current) {
+            vadRef.current.reset();
+          }
+          if (workletNodeRef.current) {
+            workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+          }
         }
       } catch (err) {
         console.error('Error parsing voice WebSocket message:', err);

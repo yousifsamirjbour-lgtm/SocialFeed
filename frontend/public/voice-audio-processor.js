@@ -25,7 +25,7 @@ class VoiceAudioProcessor extends AudioWorkletProcessor {
 
     this.port.onmessage = (event) => {
       const data = event.data;
-      if (data && data.command === 'start_recording') {
+      if (data && (data.command === 'start_recording' || data.command === 'get_preroll')) {
         this.isRecording = true;
         // Emit captured pre-roll buffer
         const orderedPreRoll = new Float32Array(this.preRollSize);
@@ -36,6 +36,10 @@ class VoiceAudioProcessor extends AudioWorkletProcessor {
           type: 'preroll_data',
           samples: orderedPreRoll
         });
+      } else if (data && data.command === 'reset') {
+        this.preRollIndex = 0;
+        this.preRollBuffer.fill(0);
+        this.sampleFraction = 0.0;
       } else if (data && data.command === 'stop_recording') {
         this.isRecording = false;
       }

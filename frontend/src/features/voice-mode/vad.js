@@ -138,6 +138,8 @@ export class VoiceActivityDetector {
     this.collectedChunks = [];
     this.preRollSamples = null;
     this.consecutiveSpeechMs = 0;
+    this.lastSpeechTime = 0;
+    this.speechStartTime = 0;
   }
 
   reset() {
@@ -145,5 +147,7 @@ export class VoiceActivityDetector {
     this.consecutiveSpeechMs = 0;
     this.collectedChunks = [];
     this.preRollSamples = null;
+    this.lastSpeechTime = 0;
+    this.speechStartTime = 0;
   }
 }

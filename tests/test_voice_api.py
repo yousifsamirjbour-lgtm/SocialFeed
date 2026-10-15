@@ -135,6 +135,66 @@ def test_websocket_turn_flow_with_mocked_services(sync_client, valid_token, monk
         assert msg5["type"] == "turn_complete"
         assert "SocialFeed" in msg5["assistant_transcript"]
 
+def test_websocket_consecutive_multi_turn_flow(sync_client, valid_token, monkeypatch):
+    """Verifies that consecutive voice turns (Turn 1 -> Turn 2 -> Turn 3) execute cleanly on one WebSocket."""
+    turn_counter = 0
+
+    async def mock_stt(wav_bytes):
+        nonlocal turn_counter
+        turn_counter += 1
+        return {
+            "text": f"Question number {turn_counter}",
+            "language": "en",
+            "duration_seconds": 10,
+            "is_valid": True,
+            "reason": "OK"
+        }
+    monkeypatch.setattr("backend.api.voice.transcribe_voice_utterance", mock_stt)
+
+    async def mock_llm_stream(history, user_query, language="en"):
+        yield f"Answer for {user_query}."
+    monkeypatch.setattr("backend.api.voice.stream_voice_llm_chunks", mock_llm_stream)
+
+    async def mock_tts(text, language="en", voice=None):
+        return b"RIFF....WAVE"
+    monkeypatch.setattr("backend.api.voice.synthesize_voice_chunk", mock_tts)
+
+    with sync_client.websocket_connect("/api/voice/stream") as ws:
+        ws.send_text(json.dumps({"type": "auth", "token": valid_token}))
+        assert json.loads(ws.receive_text())["type"] == "auth_ok"
+
+        # Execute 3 consecutive turns
+        for turn in [1, 2, 3]:
+            # Send header + audio
+            ws.send_text(json.dumps({
+                "type": "user_audio_header",
+                "turn_id": turn,
+                "duration_ms": 1200
+            }))
+            ws.send_bytes(b"RIFF" + b"\x00" * 8000)
+
+            # 1. Turn start
+            m_start = json.loads(ws.receive_text())
+            assert m_start["type"] == "turn_start"
+            assert m_start["turn_id"] == turn
+
+            # 2. Transcript
+            m_trans = json.loads(ws.receive_text())
+            assert m_trans["type"] == "transcript"
+            assert m_trans["turn_id"] == turn
+            assert f"Question number {turn}" in m_trans["text"]
+
+            # 3. Audio chunk
+            m_chunk = json.loads(ws.receive_text())
+            assert m_chunk["type"] == "audio_chunk"
+            assert m_chunk["turn_id"] == turn
+            assert m_chunk["seq"] == 1
+
+            # 4. Turn complete
+            m_comp = json.loads(ws.receive_text())
+            assert m_comp["type"] == "turn_complete"
+            assert m_comp["turn_id"] == turn
+
 def test_websocket_silence_discarded(sync_client, valid_token, monkeypatch):
     async def mock_silence_stt(wav_bytes):
         return {

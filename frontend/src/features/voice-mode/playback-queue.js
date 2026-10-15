@@ -37,6 +37,12 @@ export class PlaybackQueue {
 
       // decodeAudioData requires a fresh copy of the buffer
       const audioBuffer = await this.audioContext.decodeAudioData(bytes.buffer.slice(0));
+
+      // If receiving chunk 1 while idle, guarantee nextExpectedSeq is 1
+      if (seq === 1 && !this.isPlaying && this.activeSourceNodes.size === 0) {
+        this.nextExpectedSeq = 1;
+      }
+
       this.pendingChunks.set(seq, { audioBuffer, text });
       this.schedulePending();
     } catch (err) {
@@ -82,6 +88,7 @@ export class PlaybackQueue {
         if (this.activeSourceNodes.size === 0 && this.pendingChunks.size === 0) {
           this.isPlaying = false;
           this.scheduledEndTime = 0;
+          this.nextExpectedSeq = 1; // Reset sequence counter so turn 2 starts cleanly at seq 1
           if (this.onQueueEmpty) this.onQueueEmpty();
         }
       };

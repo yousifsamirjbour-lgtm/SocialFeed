@@ -187,4 +187,44 @@ describe('Voice Audio Pipeline - playback-queue', () => {
     expect(queue.pendingChunks.size).toBe(0);
     expect(onQueueEmpty).toHaveBeenCalled();
   });
+
+  it('resets nextExpectedSeq to 1 after playing all chunks, allowing consecutive turn 2 playback', async () => {
+    let endedCallback = null;
+    mockAudioContext.createBufferSource = vi.fn().mockImplementation(() => {
+      const node = {
+        buffer: null,
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        disconnect: vi.fn(),
+        onended: null
+      };
+      Object.defineProperty(node, 'onended', {
+        set(cb) { endedCallback = cb; },
+        get() { return endedCallback; }
+      });
+      return node;
+    });
+
+    const onQueueEmpty = vi.fn();
+    const queue = new PlaybackQueue(mockAudioContext, { onQueueEmpty });
+    const dummyBase64 = btoa('RIFF....WAVE');
+
+    // Turn 1: Enqueue chunk 1
+    await queue.enqueueBase64WAV(1, dummyBase64, 'Turn 1 sentence.');
+    expect(queue.isPlaying).toBe(true);
+    expect(queue.nextExpectedSeq).toBe(2);
+
+    // Turn 1 finishes playing
+    if (endedCallback) endedCallback();
+    expect(queue.isPlaying).toBe(false);
+    expect(queue.nextExpectedSeq).toBe(1);
+    expect(onQueueEmpty).toHaveBeenCalled();
+
+    // Turn 2: Enqueue chunk 1 for turn 2
+    await queue.enqueueBase64WAV(1, dummyBase64, 'Turn 2 sentence.');
+    expect(queue.isPlaying).toBe(true);
+    expect(queue.nextExpectedSeq).toBe(2);
+    expect(mockAudioContext.createBufferSource).toHaveBeenCalledTimes(2);
+  });
 });
