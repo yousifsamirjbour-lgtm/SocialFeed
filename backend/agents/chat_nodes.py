@@ -251,7 +251,9 @@ async def web_search_node(state: ChatAgentState) -> Dict[str, Any]:
         })
 
     retrieved = state.get("retrieved_docs", [])
-    sources_used = "Documents + Web" if (retrieved and len(retrieved) > 0) else "Web"
+    is_sufficient = state.get("is_sufficient", False)
+    # Only claim "Documents + Web" if retrieved docs were evaluated as relevant/sufficient
+    sources_used = "Documents + Web" if (retrieved and is_sufficient) else "Web"
 
     return {
         "web_docs": web_docs,
@@ -263,12 +265,25 @@ async def generate_answer_node(state: ChatAgentState) -> Dict[str, Any]:
     query = state.get("query", "")
     retrieved_docs = state.get("retrieved_docs", [])
     web_docs = state.get("web_docs", [])
-    sources_used = state.get("sources_used") or ("Documents" if retrieved_docs else "Web")
+    is_sufficient = state.get("is_sufficient", False)
+
+    # Determine whether retrieved documents are genuinely relevant
+    include_docs = bool(retrieved_docs and is_sufficient)
+    sources_used = state.get("sources_used")
+    if not sources_used or sources_used == "None":
+        if include_docs and web_docs:
+            sources_used = "Documents + Web"
+        elif include_docs:
+            sources_used = "Documents"
+        elif web_docs:
+            sources_used = "Web"
+        else:
+            sources_used = "None"
 
     context_parts = []
     citations = []
 
-    if retrieved_docs:
+    if include_docs:
         context_parts.append("### Attached Document Evidence:")
         for idx, d in enumerate(retrieved_docs):
             page_info = f"page {d['page_number']}" if d.get("page_number") else f"chunk {d.get('chunk_index', idx)}"
@@ -317,8 +332,20 @@ async def generate_answer_node(state: ChatAgentState) -> Dict[str, Any]:
     )
 
     llm = get_groq_llm(temperature=0.2, max_tokens=1000)
-    messages = state.get("messages", []) + [
+
+    # Multi-turn history formatting:
+    # Filter only HumanMessage and AIMessage, and omit the current query if already present at the end
+    history = state.get("messages", [])
+    filtered_history = [m for m in history if isinstance(m, (HumanMessage, AIMessage))]
+    if filtered_history and isinstance(filtered_history[-1], HumanMessage) and filtered_history[-1].content == query:
+        past_turns = filtered_history[:-1]
+    else:
+        past_turns = filtered_history
+
+    # Cap to last 6 messages to avoid prompt bloat while preserving conversation context
+    messages = [
         SystemMessage(content=system_prompt),
+        *past_turns[-6:],
         HumanMessage(content=user_message)
     ]
 

@@ -478,7 +478,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
                     </div>
 
                     <div className="bubble-meta-actions">
-                      {msg.sourcesUsed && msg.sourcesUsed !== 'Error' && (
+                      {msg.sourcesUsed && msg.sourcesUsed !== 'Error' && msg.sourcesUsed !== 'None' && (
                         <span className={`source-badge badge-${msg.sourcesUsed.toLowerCase().replace(/[\s\+]+/g, '-')}`}>
                           {msg.sourcesUsed === 'Documents' && <FileCheck size={11} />}
                           {msg.sourcesUsed === 'Web' && <Globe size={11} />}
