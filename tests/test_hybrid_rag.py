@@ -187,3 +187,65 @@ async def test_stream_chat_endpoint_docs_only_refusal(client: AsyncClient, auth_
     assert "event: complete" in body
     assert "Docs-Only" in body
 
+@pytest.mark.asyncio
+async def test_reciprocal_rank_fusion_logic():
+    from backend.agents.hybrid_retriever import reciprocal_rank_fusion
+
+    fts_list = [
+        {"id": "doc1", "filename": "doc1.pdf", "content": "alpha"},
+        {"id": "doc2", "filename": "doc2.pdf", "content": "beta"},
+        {"id": "doc3", "filename": "doc3.pdf", "content": "gamma"}
+    ]
+    vec_list = [
+        {"id": "doc2", "filename": "doc2.pdf", "content": "beta"},
+        {"id": "doc4", "filename": "doc4.pdf", "content": "delta"},
+        {"id": "doc1", "filename": "doc1.pdf", "content": "alpha"}
+    ]
+
+    fused = reciprocal_rank_fusion(fts_list, vec_list, k=60, top_n=4)
+    # doc1 and doc2 appear in both rankings, so their RRF score must be higher than doc3 and doc4
+    fused_ids = [item["id"] for item in fused]
+    assert len(fused) == 4
+    # Both doc1 and doc2 should be at the top
+    assert set(fused_ids[:2]) == {"doc1", "doc2"}
+    assert fused[0]["score"] > fused[2]["score"]
+
+@pytest.mark.asyncio
+async def test_hybrid_retriever_vector_fallback_sqlite(db_session, test_user):
+    from backend.agents.hybrid_retriever import PostgresDocumentRetriever
+
+    retriever = PostgresDocumentRetriever()
+    session_id = uuid.uuid4()
+    # On SQLite dialect, retrieve_vector should gracefully return []
+    vec_results = await retriever.retrieve_vector(
+        query="test query",
+        session=db_session,
+        user_id=test_user.id,
+        chat_session_id=session_id
+    )
+    assert vec_results == []
+
+    # And unified retrieve() falls back cleanly to FTS
+    c = DocumentChunk(
+        user_id=test_user.id,
+        chat_session_id=session_id,
+        filename="hybrid_test.txt",
+        page_number=1,
+        chunk_index=0,
+        content="Hybrid search combines lexical and semantic information beautifully.",
+        embedding=None
+    )
+    db_session.add(c)
+    await db_session.commit()
+
+    unified_results = await retriever.retrieve(
+        query="hybrid search",
+        session=db_session,
+        user_id=test_user.id,
+        chat_session_id=session_id,
+        limit=5
+    )
+    assert len(unified_results) >= 1
+    assert unified_results[0]["filename"] == "hybrid_test.txt"
+
+

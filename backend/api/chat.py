@@ -19,6 +19,7 @@ from backend.core.document_parser import (
     ALLOWED_EXTENSIONS
 )
 from backend.agents.chat_graph import chat_graph
+from backend.agents.hybrid_retriever import get_embeddings_model
 
 logger = logging.getLogger(__name__)
 
@@ -89,9 +90,19 @@ async def upload_document(
 
     clean_name = sanitize_filename(filename)
 
-    # 4. Save chunks to database
+    # 4. Generate dense embeddings if Google API is configured
+    embedder = get_embeddings_model()
+    embeddings_list = [None] * len(chunks)
+    if embedder:
+        try:
+            texts = [c.get("content", "") for c in chunks]
+            embeddings_list = await embedder.aembed_documents(texts)
+        except Exception as e:
+            logger.warning(f"Failed to generate chunk embeddings during upload: {e}")
+
+    # 5. Save chunks to database
     chunk_records = []
-    for c in chunks:
+    for idx, c in enumerate(chunks):
         chunk_records.append(
             DocumentChunk(
                 user_id=user.id,
@@ -100,7 +111,7 @@ async def upload_document(
                 page_number=c.get("page_number"),
                 chunk_index=c.get("chunk_index", 0),
                 content=c.get("content", ""),
-                embedding=None  # Embedding populated in Stage 5 or async
+                embedding=embeddings_list[idx]
             )
         )
 
