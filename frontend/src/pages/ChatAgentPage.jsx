@@ -8,7 +8,6 @@ import {
   Mic, 
   Square, 
   Volume2, 
-  VolumeX, 
   RotateCcw, 
   FileText, 
   Trash2, 
@@ -45,6 +44,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const streamAbortRef = useRef(null);
 
   const {
     speak,
@@ -95,6 +95,11 @@ export default function ChatAgentPage({ navigateToFeed }) {
   // Reset Session
   const handleNewChat = useCallback(async () => {
     stopSpeaking();
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
+    }
+    setIsStreaming(false);
     const newId = crypto.randomUUID();
     setChatSessionId(newId);
     setMessages([]);
@@ -103,6 +108,14 @@ export default function ChatAgentPage({ navigateToFeed }) {
     setInputQuery('');
     setUploadError('');
   }, [stopSpeaking]);
+
+  useEffect(() => {
+    return () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+      }
+    };
+  }, []);
 
   // Document Upload
   const handleFileUpload = async (e) => {
@@ -244,9 +257,16 @@ export default function ChatAgentPage({ navigateToFeed }) {
     setMessages((prev) => [...prev, userMessage]);
     setIsStreaming(true);
 
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+
     try {
       const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
+        signal: abortController.signal,
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
@@ -295,22 +315,18 @@ export default function ChatAgentPage({ navigateToFeed }) {
             try {
               const stepData = JSON.parse(dataStr);
               setCurrentSteps((prev) => [...prev, stepData]);
-            } catch (err) {
+            } catch {
               // ignore
             }
           } else if (eventName === 'answer' && dataStr) {
             try {
               finalAnswer = JSON.parse(dataStr);
-            } catch (err) {
+            } catch {
               // ignore
             }
           } else if (eventName === 'error' && dataStr) {
-            try {
-              const errData = JSON.parse(dataStr);
-              throw new Error(errData.message || 'Stream error occurred.');
-            } catch (err) {
-              throw err;
-            }
+            const errData = JSON.parse(dataStr);
+            throw new Error(errData.message || 'Stream error occurred.');
           }
         }
       }
@@ -328,6 +344,8 @@ export default function ChatAgentPage({ navigateToFeed }) {
         setMessages((prev) => [...prev, assistantMessage]);
       }
     } catch (err) {
+      if (err.name === 'AbortError') return;
+
       setMessages((prev) => [
         ...prev,
         {
@@ -342,6 +360,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
     } finally {
       setIsStreaming(false);
       setCurrentSteps([]);
+      streamAbortRef.current = null;
     }
   };
 
@@ -510,7 +529,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
 
                     <div className="bubble-meta-actions">
                       {msg.sourcesUsed && msg.sourcesUsed !== 'Error' && msg.sourcesUsed !== 'None' && (
-                        <span className={`source-badge badge-${msg.sourcesUsed.toLowerCase().replace(/[\s\+]+/g, '-')}`}>
+                        <span className={`source-badge badge-${msg.sourcesUsed.toLowerCase().replace(/[\s+]+/g, '-')}`}>
                           {msg.sourcesUsed === 'Documents' && <FileCheck size={11} />}
                           {msg.sourcesUsed === 'Web' && <Globe size={11} />}
                           {msg.sourcesUsed === 'Documents + Web' && <Layers size={11} />}

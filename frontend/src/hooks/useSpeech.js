@@ -17,11 +17,11 @@ export function cleanMarkdownForSpeech(text) {
   clean = clean.replace(/`([^`]+)`/g, '$1');
 
   // 3. Remove document citation tags: [file.pdf, p. 1], [doc.txt, chunk 0], 【doc.txt, p. 1】, (p. 1)
-  clean = clean.replace(/[\[【\(][^\]】\)]*?\.(?:pdf|docx|txt|md|csv)[^\]】\)]*?[\]】\)]/gi, ' ');
-  clean = clean.replace(/[\[【\(]\s*(?:Doc|Document|Page|p\.|chunk)\s*\d+[^\]】\)]*?[\]】\)]/gi, ' ');
+  clean = clean.replace(/[[【(][^\]】)]*?\.(?:pdf|docx|txt|md|csv)[^\]】)]*?[\]】)]/gi, ' ');
+  clean = clean.replace(/[[【(]\s*(?:Doc|Document|Page|p\.|chunk)\s*\d+[^\]】)]*?[\]】)]/gi, ' ');
 
   // 4. Convert markdown links [Text](url) to "Text" and remove raw URLs
-  clean = clean.replace(/\[([^\]]+)\]\((?:https?:\/\/[^\)]+|[^\)]+)\)/g, '$1');
+  clean = clean.replace(/\[([^\]]+)\]\((?:https?:\/\/[^)]+|[^)]+)\)/g, '$1');
   clean = clean.replace(/https?:\/\/\S+/gi, ' ');
 
   // 5. Handle Markdown Tables:
@@ -48,8 +48,8 @@ export function cleanMarkdownForSpeech(text) {
   clean = clean.replace(/~~(.*?)~~/g, '$1');
 
   // 10. Remove bullet points and list numbers at start of lines
-  clean = clean.replace(/^\s*[\*\-\+]\s+/gm, '');
-  clean = clean.replace(/^\s*\d+[\.\)]\s+/gm, '');
+  clean = clean.replace(/^\s*[*+-]\s+/gm, '');
+  clean = clean.replace(/^\s*\d+[.)]\s+/gm, '');
 
   // 11. Remove emojis and common UI symbols
   clean = clean.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
@@ -61,7 +61,7 @@ export function cleanMarkdownForSpeech(text) {
   // Collapse duplicate sentence punctuation
   clean = clean.replace(/([.!?؟])\s*([.!?؟])+/g, '$1 ');
   // Ensure space after sentence terminator, but not inside decimal numbers (like 98.4%)
-  clean = clean.replace(/([a-zA-Z\u0600-\u06FF\)])([.!?؟])\s*/g, '$1$2 ');
+  clean = clean.replace(/([a-zA-Z\u0600-\u06FF)])([.!?؟])\s*/g, '$1$2 ');
 
   return clean.trim();
 }
@@ -163,7 +163,7 @@ export function useSpeech(token) {
       try {
         activeAudioRef.current.pause();
         activeAudioRef.current.currentTime = 0;
-      } catch (e) {
+      } catch {
         // ignore
       }
       activeAudioRef.current = null;
@@ -175,7 +175,7 @@ export function useSpeech(token) {
     if (typeof window !== 'undefined' && window.speechSynthesis) {
       try {
         window.speechSynthesis.cancel();
-      } catch (e) {
+      } catch {
         // ignore
       }
     }
@@ -287,7 +287,7 @@ export function useSpeech(token) {
               lang: isArabic ? 'ar' : 'en'
             })
           });
-        } catch (fetchErr) {
+        } catch {
           // Network failure: fallback remaining chunks to browser queue
           speakWithBrowserQueue(chunks.slice(i), isArabic);
           return;
@@ -320,7 +320,7 @@ export function useSpeech(token) {
 
         if (stopRequestedRef.current) break;
       }
-    } catch (err) {
+    } catch {
       speakWithBrowserQueue(chunks, isArabic);
     } finally {
       if (!stopRequestedRef.current && (!window.speechSynthesis || !window.speechSynthesis.speaking)) {
@@ -362,7 +362,7 @@ export function useSpeech(token) {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      throw new Error(`Microphone access error: ${err.message || 'Permission denied'}`);
+      throw new Error(`Microphone access error: ${err.message || 'Permission denied'}`, { cause: err });
     }
   }, [isRecording]);
 
@@ -380,7 +380,7 @@ export function useSpeech(token) {
         if (mediaRecorderRef.current.stream) {
           mediaRecorderRef.current.stream.getTracks().forEach((track) => track.stop());
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
       mediaRecorderRef.current = null;
@@ -444,16 +444,9 @@ export function useSpeech(token) {
   useEffect(() => {
     return () => {
       stopSpeaking();
-      if (recordingTimerRef.current) clearInterval(recordingTimerRef.current);
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
-        try {
-          mediaRecorderRef.current.stop();
-        } catch (e) {
-          // ignore
-        }
-      }
+      cancelRecording();
     };
-  }, [stopSpeaking]);
+  }, [stopSpeaking, cancelRecording]);
 
   return {
     speak,

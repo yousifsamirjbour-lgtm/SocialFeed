@@ -16,6 +16,10 @@ def sanitize_filename(filename: str) -> str:
     clean = clean.lstrip(".")
     return clean[:255] or "document"
 
+def is_arabic_text(text: str) -> bool:
+    """Checks if a string contains Arabic characters."""
+    return bool(re.search(r"[\u0600-\u06FF]", text or ""))
+
 def extract_text_from_document(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
     """
     Extracts text from PDF, DOCX, TXT, or MD file bytes.

@@ -13,6 +13,7 @@ from sqlalchemy import select, func
 from backend.agents.chat_state import ChatAgentState
 from backend.agents.hybrid_retriever import PostgresDocumentRetriever
 from backend.models.db import DocumentChunk, async_session_maker
+from backend.core.document_parser import is_arabic_text
 
 logger = logging.getLogger(__name__)
 
@@ -27,10 +28,6 @@ def get_groq_llm(temperature: float = 0.2, max_tokens: int = 800) -> ChatGroq:
         max_tokens=max_tokens,
         api_key=api_key
     )
-
-def is_arabic_text(text: str) -> bool:
-    """Checks if a string contains Arabic characters."""
-    return bool(re.search(r"[\u0600-\u06FF]", text))
 
 SUMMARIZATION_PATTERNS = [
     r"\bsummar(y|ize|ise|ization|isation)\b",

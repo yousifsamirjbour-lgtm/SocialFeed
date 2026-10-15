@@ -12,6 +12,7 @@ import groq
 
 from backend.models.db import User
 from backend.core.users import current_active_user
+from backend.core.document_parser import is_arabic_text
 
 logger = logging.getLogger(__name__)
 
@@ -26,10 +27,6 @@ _tts_cache: Dict[str, bytes] = {}
 
 # In-memory daily usage tracking for zero-cost guardrails (user_id -> {"date": date, "count": int})
 _tts_usage: Dict[str, Dict[str, Any]] = {}
-
-def is_arabic_text(text: str) -> bool:
-    """Checks if a string contains Arabic characters."""
-    return bool(re.search(r"[\u0600-\u06FF]", text))
 
 def get_groq_client() -> groq.Groq:
     api_key = os.getenv("GROQ_API_KEY")
