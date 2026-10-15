@@ -39,13 +39,13 @@ describe('Navbar Component', () => {
     expect(defaultProps.navigateToMyProfile).toHaveBeenCalled();
   });
 
-  it('triggers setCurrentView with search and agent-search', () => {
+  it('triggers setCurrentView with search and ai-chat', () => {
     render(<Navbar {...defaultProps} />);
     fireEvent.click(screen.getByRole('button', { name: /Find Users/i }));
     expect(defaultProps.setCurrentView).toHaveBeenCalledWith('search');
 
     fireEvent.click(screen.getByRole('button', { name: /AI Studio/i }));
-    expect(defaultProps.setCurrentView).toHaveBeenCalledWith('agent-search');
+    expect(defaultProps.setCurrentView).toHaveBeenCalledWith('ai-chat');
   });
 
   it('triggers handleLogout when clicking Logout button', () => {

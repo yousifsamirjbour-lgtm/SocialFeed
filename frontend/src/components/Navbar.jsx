@@ -33,7 +33,7 @@ const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLog
         </button>
 
         <button
-          onClick={() => setCurrentView('agent-search')}
+          onClick={() => setCurrentView('ai-chat')}
           className="nav-action-btn"
           title="AI Studio"
           aria-label="AI Studio"

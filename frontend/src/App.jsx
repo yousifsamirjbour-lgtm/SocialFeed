@@ -8,6 +8,7 @@ import FeedPage from './pages/FeedPage';
 import ProfilePage from './pages/ProfilePage';
 import SearchPage from './pages/SearchPage';
 import SearchAgentPage from './pages/SearchAgentPage';
+import ChatAgentPage from './pages/ChatAgentPage';
 
 // Import Components
 import Navbar from './components/Navbar';
@@ -786,6 +787,12 @@ function App() {
             initialPostId={aiStudioPostId}
             navigateToFeed={navigateToFeed}
             onPostPublished={() => fetchFeed()}
+          />
+        )}
+
+        {currentView === 'ai-chat' && (
+          <ChatAgentPage 
+            navigateToFeed={navigateToFeed}
           />
         )}
       </div>
