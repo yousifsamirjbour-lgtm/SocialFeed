@@ -18,7 +18,9 @@ import {
   FileCheck,
   Globe,
   Layers,
-  ArrowLeft
+  ArrowLeft,
+  Check,
+  X
 } from 'lucide-react';
 import { API_BASE_URL } from '../config/api';
 import { useSpeech, isArabicText } from '../hooks/useSpeech';
@@ -50,6 +52,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
     isSpeaking,
     startRecording,
     stopRecording,
+    cancelRecording,
     isRecording,
     recordingSeconds
   } = useSpeech(token);
@@ -151,17 +154,46 @@ export default function ChatAgentPage({ navigateToFeed }) {
     }
   };
 
-  // Voice recording toggle
+  // Voice recording handlers
+  const handleStopRecording = async () => {
+    if (!isRecording) return;
+    try {
+      const transcript = await stopRecording();
+      if (transcript && transcript.trim()) {
+        const cleanTranscript = transcript.trim();
+        const textarea = textareaRef.current;
+        if (textarea) {
+          const start = textarea.selectionStart ?? inputQuery.length;
+          const end = textarea.selectionEnd ?? inputQuery.length;
+          const before = inputQuery.substring(0, start);
+          const after = inputQuery.substring(end);
+          const spaceBefore = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+          const spaceAfter = (after && !after.startsWith(' ') && !after.startsWith('\n')) ? ' ' : '';
+          const newText = `${before}${spaceBefore}${cleanTranscript}${spaceAfter}${after}`;
+          setInputQuery(newText);
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.focus();
+              const newPos = start + spaceBefore.length + cleanTranscript.length;
+              textareaRef.current.setSelectionRange(newPos, newPos);
+            }
+          }, 50);
+        } else {
+          setInputQuery((prev) => (prev ? `${prev} ${cleanTranscript}` : cleanTranscript));
+        }
+      }
+    } catch (err) {
+      setUploadError(err.message || 'Voice recording failed.');
+    }
+  };
+
+  const handleCancelRecording = () => {
+    cancelRecording();
+  };
+
   const handleMicClick = async () => {
     if (isRecording) {
-      try {
-        const transcript = await stopRecording();
-        if (transcript) {
-          setInputQuery((prev) => (prev ? `${prev} ${transcript}` : transcript));
-        }
-      } catch (err) {
-        setUploadError(err.message || 'Voice recording failed.');
-      }
+      await handleStopRecording();
     } else {
       try {
         setUploadError('');
@@ -493,7 +525,12 @@ export default function ChatAgentPage({ navigateToFeed }) {
                         title={isSpeaking && speakingMessageId === msg.id ? 'Stop reading' : 'Read aloud'}
                       >
                         {isSpeaking && speakingMessageId === msg.id ? (
-                          <VolumeX size={14} />
+                          <div className="active-soundwave" aria-label="Speaking">
+                            <span className="wave-bar bar-1" />
+                            <span className="wave-bar bar-2" />
+                            <span className="wave-bar bar-3" />
+                            <Square size={9} className="stop-sq-icon" />
+                          </div>
                         ) : (
                           <Volume2 size={14} />
                         )}
@@ -571,6 +608,43 @@ export default function ChatAgentPage({ navigateToFeed }) {
 
       {/* Input Form Bar */}
       <footer className="chat-input-bar-container">
+        {isRecording && (
+          <div className="dictation-active-bar" role="status" aria-label="Audio Recording Active">
+            <div className="dictation-status-info">
+              <span className="rec-pulse-dot" />
+              <div className="dictation-waveform">
+                <span className="wave-bar bar-1" />
+                <span className="wave-bar bar-2" />
+                <span className="wave-bar bar-3" />
+                <span className="wave-bar bar-4" />
+              </div>
+              <span className="dictation-timer">{recordingSeconds}s</span>
+              <span className="dictation-hint">Listening... (Arabic or English)</span>
+            </div>
+
+            <div className="dictation-actions">
+              <button
+                type="button"
+                className="dictation-cancel-btn"
+                onClick={handleCancelRecording}
+                title="Discard recording without inserting"
+              >
+                <X size={13} />
+                <span>Cancel</span>
+              </button>
+              <button
+                type="button"
+                className="dictation-done-btn"
+                onClick={handleStopRecording}
+                title="Finish recording and insert text"
+              >
+                <Check size={13} />
+                <span>Done</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSendMessage} className="chat-input-form">
           <div className="input-textarea-wrapper">
             <textarea

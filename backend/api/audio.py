@@ -81,7 +81,8 @@ async def transcribe_audio(
         return client.audio.transcriptions.create(
             file=(filename, file_bytes),
             model="whisper-large-v3-turbo",
-            response_format="json"
+            response_format="json",
+            prompt="Accurate English and Arabic conversational speech. محادثة باللغة العربية والإنجليزية."
         )
 
     try:

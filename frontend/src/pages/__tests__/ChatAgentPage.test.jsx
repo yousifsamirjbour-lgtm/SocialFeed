@@ -124,5 +124,24 @@ describe('ChatAgentPage Component', () => {
 
     expect(screen.getByText(/financials.pdf \(p\. 3\)/i)).toBeInTheDocument();
     expect(screen.getByText('Documents')).toBeInTheDocument();
+
+    // Test Read Aloud Toggle
+    const speakBtn = screen.getByRole('button', { name: /Read aloud/i });
+    expect(speakBtn).toBeInTheDocument();
+    fireEvent.click(speakBtn);
+
+    // Stop speaking
+    fireEvent.click(speakBtn);
+  });
+
+  it('renders microphone button and allows triggering dictation mode', async () => {
+    render(<ChatAgentPage navigateToFeed={vi.fn()} />);
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { level: 1, name: /AI STUDIO CHATBOT/i })).toBeInTheDocument();
+    });
+
+    const micBtn = screen.getByRole('button', { name: /Record voice query/i });
+    expect(micBtn).toBeInTheDocument();
   });
 });
