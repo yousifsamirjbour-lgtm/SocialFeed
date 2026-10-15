@@ -14,13 +14,23 @@ The API is mounted at `/api` for application endpoints, including `POST /api/sea
 - Publish image and video posts, comment, like, save, and delete content.
 - Follow users and browse followers, following lists, and user profiles.
 - Search users by email and view profile posts.
-- **AI Studio: Research Assistant & Fact-Checker**:
-  - Full LangGraph workflow integrating internal PostgreSQL Full-Text Search with live Tavily web search.
+- Register and authenticate with JWT-backed sessions.
+- Publish image and video posts, comment, like, save, and delete content.
+- Follow users and browse followers, following lists, and user profiles.
+- Search users by email and view profile posts.
+- **AI Studio: Next-Gen Hybrid RAG Chatbot (Top Bar Entry)**:
+  - Conversational AI assistant with dual source modes: **Auto (Hybrid)** and **Docs-Only**.
+  - Document attachments support: PDF, DOCX, TXT, and MD parsed, sanitized, chunked, and indexed.
+  - Hybrid search engine combining PostgreSQL Full-Text Search (`to_tsvector('simple')`) and pgvector semantic cosine distance (`text-embedding-004`), fused via Reciprocal Rank Fusion (RRF $k=60$).
+  - Strict **Docs-Only** answering mode: refuses if evidence is missing and never queries the live web or extrapolates outside provided files.
+  - Multilingual Voice Input (STT) powered by Groq Whisper (`whisper-large-v3-turbo`) for English and Arabic.
+  - Neural Voice Output (TTS) powered by Groq Orpheus (`orpheus-v1-english` and `orpheus-arabic-saudi`), chunked strictly to $\le 190$ characters with SHA-256 caching and browser `speechSynthesis` fallback.
+  - Real-time Server-Sent Events (SSE) streaming with visible intermediate agent execution steps and source citations.
+- **AI Studio: Research Assistant & Fact-Checker (Feed Banner Entry)**:
+  - LangGraph workflow integrating internal PostgreSQL Full-Text Search with live Tavily web search.
   - Visible self-correction via an automated "Editor AI" critique loop (max 2 iterations).
   - Side-by-side "Community vs. Reality" comparison card showing internal discourse vs. verified ground truth.
-  - Automated royalty-free illustration generator (Pollinations.ai) with Cloudinary hosting.
-  - Human-in-the-Loop (HITL) approval step allowing users to inspect, edit, and approve drafts before posting to the public feed.
-  - Strict $0.00 cost guardrails: per-user rate limits, global daily caps, max token limits, and query caching.
+  - Automated royalty-free illustration generator (Pollinations.ai) with Cloudinary hosting and HITL review.
 - Upload and crop profile photos; serve uploaded files from the backend.
 
 ## Tech Stack
@@ -56,6 +66,61 @@ The API is mounted at `/api` for application endpoints, including `POST /api/sea
 ├── pyproject.toml
 └── requirements.txt
 ```
+
+## AI Studio: Hybrid RAG & Voice Chatbot
+
+The **AI Studio Chatbot** (accessed via the top-bar "AI Studio" button) is an advanced conversational system combining user document attachments, hybrid vector & lexical retrieval, live Tavily web fallback, and multilingual neural voice interaction.
+
+### System Architecture & Pipeline
+
+```mermaid
+flowchart TD
+    UserQuery([User Input / Audio STT]) --> RouteMode{Route Mode Node}
+    RouteMode -- "Docs Attached" --> Retrieve[Hybrid Retrieval: FTS + pgvector]
+    RouteMode -- "No Docs & Auto Mode" --> WebSearch[Web Search via Tavily]
+    RouteMode -- "No Docs & Docs-Only Mode" --> Refusal[Refusal Node: Explain Missing Docs]
+
+    Retrieve --> Grade{Grade Relevance Node}
+    Grade -- "Sufficient Evidence" --> GenerateAnswer[Generate Answer Node with Citations]
+    Grade -- "Insufficient & Auto Mode" --> WebSearch
+    Grade -- "Insufficient & Docs-Only" --> Refusal
+
+    WebSearch --> GenerateAnswer
+    GenerateAnswer --> SSEStream[SSE Stream: Intermediate Steps & Answer]
+    Refusal --> SSEStream
+
+    SSEStream --> TTS["Voice Output: Groq Orpheus TTS (<= 190 chars) or Browser Fallback"]
+```
+
+### Core Capabilities
+
+1. **Document Attachments & Ingestion**:
+   - Supports `.pdf`, `.docx`, `.txt`, and `.md` files up to 25MB.
+   - Extracts page-level text, sanitizes filenames to prevent path traversal, and partitions text into ~500-word chunks with 50-word overlap.
+   - Persisted in PostgreSQL table `document_chunks` with metadata (`filename`, `page_number`, `chunk_index`, `embedding`).
+
+2. **Dual Answering Modes**:
+   - **Auto (Hybrid)**: Prioritizes attached documents. If documents lack sufficient factual evidence, routes to Tavily live web search to fill the gap. If no documents are attached, answers from verified web facts.
+   - **Docs-Only**: Answers strictly from attached documents. If information is missing, refuses explicitly without querying the web or extrapolating from general model memory. Activated via UI pill switch or natural phrases (e.g., "from the documents only", "فقط من المستندات").
+
+3. **Hybrid Search & Reciprocal Rank Fusion (RRF)**:
+   - **Full-Text Search**: Uses PostgreSQL `to_tsvector('simple', content)` and `websearch_to_tsquery('simple', query)`. The `'simple'` dictionary preserves Arabic characters and roots without destructive English stemming.
+   - **Dense Vector Search**: Generates 768-dimensional embeddings using Google's `text-embedding-004` and queries pgvector via cosine distance (`embedding <=> query_vec`).
+   - **Reciprocal Rank Fusion**: Merges lexical and semantic rankings with smoothing constant $k=60$:
+     $$RRF(d) = \sum_{m \in \{fts, vector\}} \frac{1}{60 + rank_m(d)}$$
+
+4. **Multilingual Voice Pipeline**:
+   - **Speech-to-Text (STT)**: Voice recordings from browser `MediaRecorder` sent to `POST /api/audio/stt`, transcribed via Groq Whisper (`whisper-large-v3-turbo`) with English and Arabic fluency.
+   - **Text-to-Speech (TTS)**: Assistant responses read aloud via `POST /api/audio/tts`. Uses Groq Orpheus neural models (`canopylabs/orpheus-v1-english` with `autumn` voice, `canopylabs/orpheus-arabic-saudi` with `fahad` voice).
+   - **Strict 190-Character Guardrail**: To honor Groq's 200-character hard limit, text is cleanly partitioned on punctuation boundaries into chunks $\le 190$ characters.
+   - **SHA-256 Audio Caching & Browser Fallback**: Repeated sentences hit in-memory audio cache. If the Groq daily limit (150 calls/user/day) or an API timeout occurs, the frontend gracefully falls back to `window.speechSynthesis`.
+
+5. **Verifiable Citations**:
+   - Inline document citations: `[Filename, p. X]`.
+   - Inline web citations: `[Source Title](URL)`.
+   - Answer source badges: `Documents`, `Web`, or `Documents + Web`.
+
+---
 
 ## AI Studio: Research Assistant & Fact-Checker
 
@@ -138,10 +203,17 @@ DATABASE_URL=postgresql+asyncpg://<user>:<password>@<host>:5432/<database>
 # Required by the authentication setup. Generate a long, random value.
 JWT_SECRET_KEY=<your-random-secret>
 
-# Required for AI Web Search & AI Studio.
+# Required for AI Web Search, AI Studio & Voice (STT & TTS)
 GROQ_API_KEY=<your-groq-api-key>
 GROQ_MODEL=openai/gpt-oss-20b
 TAVILY_API_KEY=<your-tavily-api-key>
+
+# Required for Semantic Vector Search (Google text-embedding-004)
+GOOGLE_API_KEY=<your-google-api-key>
+
+# Supabase PostgreSQL (pgvector extension):
+# Run in Supabase SQL Editor once: CREATE EXTENSION IF NOT EXISTS vector;
+# If using transaction pooler (port 6543), asyncpg's statement_cache_size: 0 is automatically applied in db.py
 
 # Optional: configure if using Cloudinary-backed media features.
 CLOUDINARY_CLOUD_NAME=<your-cloud-name>

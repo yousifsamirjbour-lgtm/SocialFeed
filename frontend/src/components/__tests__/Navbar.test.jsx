@@ -17,7 +17,7 @@ describe('Navbar Component', () => {
     expect(screen.getByText('SocialFeed')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Profile/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Find Users/i })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /AI Studio/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /AI Chatbot/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Logout/i })).toBeInTheDocument();
   });
 
@@ -39,13 +39,13 @@ describe('Navbar Component', () => {
     expect(defaultProps.navigateToMyProfile).toHaveBeenCalled();
   });
 
-  it('triggers setCurrentView with search and agent-search', () => {
+  it('triggers setCurrentView with search and ai-chat', () => {
     render(<Navbar {...defaultProps} />);
     fireEvent.click(screen.getByRole('button', { name: /Find Users/i }));
     expect(defaultProps.setCurrentView).toHaveBeenCalledWith('search');
 
-    fireEvent.click(screen.getByRole('button', { name: /AI Studio/i }));
-    expect(defaultProps.setCurrentView).toHaveBeenCalledWith('agent-search');
+    fireEvent.click(screen.getByRole('button', { name: /AI Chatbot/i }));
+    expect(defaultProps.setCurrentView).toHaveBeenCalledWith('ai-chat');
   });
 
   it('triggers handleLogout when clicking Logout button', () => {

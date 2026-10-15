@@ -14,3 +14,8 @@ frontend/.env
 .coverage
 .pytest_cache/
 .playwright-mcp/
+ai-studio-promo/
+skills-lock.json
+scratch/
+.agents/skills/supabase-server/
+.agents/skills/socialfeed-deploy-troubleshooting/
