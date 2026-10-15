@@ -11,6 +11,7 @@ from backend.api.comments import router as comments_router
 from backend.api.users import router as users_router
 from backend.api.search_route import router as search_router
 from backend.api.ai_studio import router as ai_studio_router
+from backend.api.chat import router as chat_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
@@ -48,6 +49,8 @@ app.include_router(search_router)
 app.include_router(search_router, prefix="/api")
 app.include_router(ai_studio_router)
 app.include_router(ai_studio_router, prefix="/api")
+app.include_router(chat_router)
+app.include_router(chat_router, prefix="/api")
 
 # Static Files
 os.makedirs("uploads", exist_ok=True)

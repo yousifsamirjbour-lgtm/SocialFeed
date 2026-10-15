@@ -1,10 +1,11 @@
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import Uuid
+from pgvector.sqlalchemy import Vector
 from fastapi import Depends
 from fastapi_users_db_sqlalchemy.generics import GUID
 from fastapi_users_db_sqlalchemy import SQLAlchemyBaseUserTableUUID, SQLAlchemyUserDatabase
@@ -82,8 +83,35 @@ class SavedPost(Base):
     post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
 
-# Added connection pooling optimizations for PostgreSQL
-engine = create_async_engine(DATABASE_URL, echo=True, pool_size=10, max_overflow=20)
+class DocumentChunk(Base):
+    __tablename__ = "document_chunks"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    chat_session_id = Column(Uuid, nullable=False, index=True)
+    filename = Column(String(255), nullable=False)
+    page_number = Column(Integer, nullable=True)
+    chunk_index = Column(Integer, nullable=False)
+    content = Column(Text, nullable=False)
+    embedding = Column(Vector(768), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", foreign_keys=[user_id])
+
+
+# Connection arguments & pooling optimizations for PostgreSQL & Supabase
+engine_connect_args = {}
+if "asyncpg" in DATABASE_URL:
+    # Disable asyncpg prepared statement cache for compatibility with Supabase's Transaction Pooler (port 6543 / pgBouncer)
+    engine_connect_args["statement_cache_size"] = 0
+
+engine = create_async_engine(
+    DATABASE_URL,
+    echo=True,
+    pool_size=10,
+    max_overflow=20,
+    connect_args=engine_connect_args
+)
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 async def create_db_and_tables():

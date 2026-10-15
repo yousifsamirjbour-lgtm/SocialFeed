@@ -14,3 +14,4 @@ frontend/.env
 .coverage
 .pytest_cache/
 .playwright-mcp/
+ai-studio-promo/
