@@ -18,10 +18,12 @@ import {
   FileCheck,
   Globe,
   Layers,
-  ArrowLeft
+  ArrowLeft,
+  Headphones
 } from 'lucide-react';
 import { API_BASE_URL } from '../config/api';
 import { useSpeech, isArabicText } from '../hooks/useSpeech';
+import VoiceModeView from '../features/voice-mode/VoiceModeView';
 import './ChatAgentPage.css';
 
 export default function ChatAgentPage({ navigateToFeed }) {
@@ -39,6 +41,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
   const [isStreaming, setIsStreaming] = useState(false);
   const [currentSteps, setCurrentSteps] = useState([]);
   const [speakingMessageId, setSpeakingMessageId] = useState(null);
+  const [showVoiceMode, setShowVoiceMode] = useState(false);
 
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
@@ -368,6 +371,17 @@ export default function ChatAgentPage({ navigateToFeed }) {
 
           <button
             type="button"
+            className="chat-voice-mode-btn"
+            onClick={() => setShowVoiceMode(true)}
+            title="Voice Mode"
+            aria-label="Voice Mode"
+          >
+            <Headphones size={15} />
+            <span className="btn-text">Voice Mode</span>
+          </button>
+
+          <button
+            type="button"
             className="new-chat-btn"
             onClick={handleNewChat}
             title="Start New Session"
@@ -622,6 +636,12 @@ export default function ChatAgentPage({ navigateToFeed }) {
           </div>
         </form>
       </footer>
+
+      {/* Real-time Bidirectional Voice Assistant Mode */}
+      <VoiceModeView 
+        isOpen={showVoiceMode} 
+        onClose={() => setShowVoiceMode(false)} 
+      />
     </div>
   );
 }

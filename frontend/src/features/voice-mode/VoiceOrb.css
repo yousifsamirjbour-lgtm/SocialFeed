@@ -1,0 +1,174 @@
+/* VoiceOrb.css - Minimalist animated audio orb with 4 states */
+
+.voice-orb-container {
+  position: relative;
+  width: 200px;
+  height: 200px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0 auto;
+  user-select: none;
+}
+
+/* Outer halo */
+.voice-orb-halo {
+  position: absolute;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(99, 102, 241, 0.25) 0%, rgba(139, 92, 246, 0.08) 55%, transparent 75%);
+  filter: blur(24px);
+  transition: transform 0.15s ease-out, background 0.4s ease;
+  pointer-events: none;
+}
+
+/* Mid ripple */
+.voice-orb-ripple {
+  position: absolute;
+  width: 210px;
+  height: 210px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(167, 139, 250, 0.35);
+  box-shadow: 0 0 20px rgba(129, 140, 248, 0.25);
+  transition: transform 0.12s ease-out, border-color 0.3s ease;
+  pointer-events: none;
+}
+
+/* Core Orb */
+.voice-orb-core {
+  position: relative;
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 50%, #ec4899 100%);
+  box-shadow: 0 0 45px rgba(99, 102, 241, 0.6), inset 0 0 20px rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+  transition: transform 0.12s ease-out, box-shadow 0.3s ease;
+}
+
+.voice-orb-sheen {
+  position: absolute;
+  top: 5%;
+  left: 15%;
+  width: 50%;
+  height: 35%;
+  border-radius: 50%;
+  background: radial-gradient(ellipse at center, rgba(255, 255, 255, 0.65) 0%, transparent 80%);
+  pointer-events: none;
+}
+
+.voice-orb-swirl {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(from 0deg, transparent, rgba(255, 255, 255, 0.2), transparent, rgba(236, 72, 153, 0.3), transparent);
+  animation: orbRotate 12s linear infinite;
+  mix-blend-mode: overlay;
+}
+
+/* State 1: Idle & Listening */
+.state-idle .voice-orb-core,
+.state-listening .voice-orb-core {
+  animation: orbBreathe 4s ease-in-out infinite;
+}
+
+.state-listening .voice-orb-ripple {
+  animation: ripplePulse 3s ease-in-out infinite;
+  border-color: rgba(99, 102, 241, 0.5);
+}
+
+/* State 2: User Speaking */
+.state-user_speaking .voice-orb-core {
+  background: linear-gradient(135deg, #4f46e5 0%, #06b6d4 100%);
+  box-shadow: 0 0 60px rgba(6, 182, 212, 0.8), inset 0 0 25px rgba(255, 255, 255, 0.6);
+}
+
+.state-user_speaking .voice-orb-halo {
+  background: radial-gradient(circle, rgba(6, 182, 212, 0.45) 0%, rgba(99, 102, 241, 0.15) 60%, transparent 75%);
+}
+
+.state-user_speaking .voice-orb-ripple {
+  border-color: rgba(6, 182, 212, 0.7);
+  box-shadow: 0 0 30px rgba(6, 182, 212, 0.5);
+}
+
+/* State 3: Thinking */
+.state-thinking .voice-orb-core {
+  background: linear-gradient(135deg, #8b5cf6 0%, #ec4899 50%, #f59e0b 100%);
+  box-shadow: 0 0 50px rgba(236, 72, 153, 0.7);
+  animation: orbShimmer 1.8s ease-in-out infinite;
+}
+
+.voice-orb-spinner {
+  position: absolute;
+  width: 190px;
+  height: 190px;
+  animation: orbSpin 2.5s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+  pointer-events: none;
+}
+
+.orbit-dot {
+  position: absolute;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 0 10px #ffffff;
+}
+
+.dot-1 { top: 0; left: 50%; transform: translateX(-50%); }
+.dot-2 { bottom: 15%; left: 15%; }
+.dot-3 { bottom: 15%; right: 15%; }
+
+/* State 4: Assistant Speaking */
+.state-assistant_speaking .voice-orb-core {
+  background: linear-gradient(135deg, #a855f7 0%, #6366f1 50%, #3b82f6 100%);
+  box-shadow: 0 0 55px rgba(168, 85, 247, 0.8), inset 0 0 25px rgba(255, 255, 255, 0.5);
+  animation: assistantPulse 1.2s ease-in-out infinite alternate;
+}
+
+.state-assistant_speaking .voice-orb-halo {
+  background: radial-gradient(circle, rgba(168, 85, 247, 0.35) 0%, rgba(59, 130, 246, 0.15) 60%, transparent 75%);
+}
+
+.state-assistant_speaking .voice-orb-ripple {
+  border-color: rgba(168, 85, 247, 0.6);
+  animation: soundwaveRipples 1.5s cubic-bezier(0.2, 0.8, 0.4, 1) infinite;
+}
+
+/* Keyframe Animations */
+@keyframes orbBreathe {
+  0%, 100% { transform: scale(1.0); }
+  50% { transform: scale(1.04); }
+}
+
+@keyframes ripplePulse {
+  0%, 100% { transform: scale(1.08); opacity: 0.6; }
+  50% { transform: scale(1.18); opacity: 0.9; }
+}
+
+@keyframes orbRotate {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orbSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes orbShimmer {
+  0%, 100% { filter: brightness(1.0); }
+  50% { filter: brightness(1.2); }
+}
+
+@keyframes assistantPulse {
+  0% { transform: scale(1.02); }
+  100% { transform: scale(1.10); }
+}
+
+@keyframes soundwaveRipples {
+  0% { transform: scale(1.05); opacity: 0.8; }
+  100% { transform: scale(1.35); opacity: 0; }
+}
