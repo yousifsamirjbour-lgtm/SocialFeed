@@ -1,11 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { 
   X, 
   Mic, 
   MicOff, 
   Square, 
   PhoneOff, 
-  Sparkles, 
   Clock, 
   Subtitles, 
   AlertCircle 
@@ -23,7 +22,6 @@ export default function VoiceModeView({ isOpen, onClose }) {
     voiceState,
     errorMessage,
     secondsLeft,
-    turnsLeft,
     isMuted,
     micAmplitude,
     transcripts,

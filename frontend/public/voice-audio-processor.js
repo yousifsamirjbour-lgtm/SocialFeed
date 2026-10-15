@@ -1,3 +1,5 @@
+/* global AudioWorkletProcessor, registerProcessor, sampleRate */
+/* eslint-disable no-unused-vars */
 /**
  * VoiceAudioProcessor (AudioWorklet)
  * Runs on the Web Audio rendering thread to:

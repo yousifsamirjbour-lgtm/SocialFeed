@@ -136,7 +136,7 @@ describe('Voice Audio Pipeline - playback-queue', () => {
       currentTime: 1.0,
       destination: {},
       resume: vi.fn().mockResolvedValue(),
-      decodeAudioData: vi.fn().mockImplementation(async (buf) => ({
+      decodeAudioData: vi.fn().mockImplementation(async () => ({
         duration: 1.5,
         length: 24000
       })),

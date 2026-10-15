@@ -266,22 +266,18 @@ export default function ChatAgentPage({ navigateToFeed }) {
             try {
               const stepData = JSON.parse(dataStr);
               setCurrentSteps((prev) => [...prev, stepData]);
-            } catch (err) {
+            } catch {
               // ignore
             }
           } else if (eventName === 'answer' && dataStr) {
             try {
               finalAnswer = JSON.parse(dataStr);
-            } catch (err) {
+            } catch {
               // ignore
             }
           } else if (eventName === 'error' && dataStr) {
-            try {
-              const errData = JSON.parse(dataStr);
-              throw new Error(errData.message || 'Stream error occurred.');
-            } catch (err) {
-              throw err;
-            }
+            const errData = JSON.parse(dataStr);
+            throw new Error(errData.message || 'Stream error occurred.');
           }
         }
       }
@@ -493,7 +489,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
 
                     <div className="bubble-meta-actions">
                       {msg.sourcesUsed && msg.sourcesUsed !== 'Error' && (
-                        <span className={`source-badge badge-${msg.sourcesUsed.toLowerCase().replace(/[\s\+]+/g, '-')}`}>
+                        <span className={`source-badge badge-${msg.sourcesUsed.toLowerCase().replace(/[\s+]+/g, '-')}`}>
                           {msg.sourcesUsed === 'Documents' && <FileCheck size={11} />}
                           {msg.sourcesUsed === 'Web' && <Globe size={11} />}
                           {msg.sourcesUsed === 'Documents + Web' && <Layers size={11} />}

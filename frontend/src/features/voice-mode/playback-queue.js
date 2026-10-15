@@ -25,7 +25,9 @@ export class PlaybackQueue {
       try {
         node.stop();
         node.disconnect();
-      } catch (e) {}
+      } catch {
+        // Ignored if node already stopped
+      }
     }
     this.activeSourceNodes.clear();
     this.pendingChunks.clear();
@@ -140,7 +142,7 @@ export class PlaybackQueue {
       try {
         node.stop();
         node.disconnect();
-      } catch (e) {
+      } catch {
         // Ignored if node already stopped
       }
     }

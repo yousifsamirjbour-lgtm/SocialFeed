@@ -12,7 +12,7 @@ export function cleanMarkdownForSpeech(text) {
     // Remove inline code
     .replace(/`([^`]+)`/g, '$1')
     // Convert markdown links [text](url) to text
-    .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+    .replace(/\[([^\]]+)\]\([^)]+\)/g, '$1')
     // Remove headers (# Title)
     .replace(/^#{1,6}\s+/gm, '')
     // Remove blockquotes (> quote)
@@ -24,7 +24,7 @@ export function cleanMarkdownForSpeech(text) {
     // Remove strikethrough (~~text~~)
     .replace(/~~(.*?)~~/g, '$1')
     // Remove bullet points / list numbers
-    .replace(/^\s*[\*\-\+]\s+/gm, '')
+    .replace(/^\s*[*+-]\s+/gm, '')
     .replace(/^\s*\d+\.\s+/gm, '')
     // Collapse extra whitespace
     .replace(/\s+/g, ' ')
@@ -102,7 +102,7 @@ export function useSpeech(token) {
       try {
         activeAudioRef.current.pause();
         activeAudioRef.current.currentTime = 0;
-      } catch (e) {
+      } catch {
         // ignore
       }
       activeAudioRef.current = null;
@@ -132,7 +132,7 @@ export function useSpeech(token) {
 
       setIsSpeaking(true);
       window.speechSynthesis.speak(utterance);
-    } catch (e) {
+    } catch {
       setIsSpeaking(false);
     }
   }, []);
@@ -194,7 +194,7 @@ export function useSpeech(token) {
 
         if (stopRequestedRef.current) break;
       }
-    } catch (err) {
+    } catch {
       // Fallback to browser speech synthesis
       speakWithBrowser(fullText, isArabic);
     } finally {
@@ -231,7 +231,7 @@ export function useSpeech(token) {
         setRecordingSeconds((prev) => prev + 1);
       }, 1000);
     } catch (err) {
-      throw new Error(`Microphone access error: ${err.message || 'Permission denied'}`);
+      throw new Error(`Microphone access error: ${err.message || 'Permission denied'}`, { cause: err });
     }
   }, [isRecording]);
 
@@ -292,7 +292,7 @@ export function useSpeech(token) {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording') {
         try {
           mediaRecorderRef.current.stop();
-        } catch (e) {
+        } catch {
           // ignore
         }
       }
