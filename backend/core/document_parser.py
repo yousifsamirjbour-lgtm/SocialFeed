@@ -16,6 +16,10 @@ def sanitize_filename(filename: str) -> str:
     clean = clean.lstrip(".")
     return clean[:255] or "document"
 
+def is_arabic_text(text: str) -> bool:
+    """Checks if a string contains Arabic characters."""
+    return bool(re.search(r"[\u0600-\u06FF]", text or ""))
+
 def extract_text_from_document(file_bytes: bytes, filename: str) -> List[Dict[str, Any]]:
     """
     Extracts text from PDF, DOCX, TXT, or MD file bytes.
@@ -69,8 +73,8 @@ def chunk_document_pages(
     chunk_overlap: int = 50
 ) -> List[Dict[str, Any]]:
     """
-    Splits extracted pages into chunks of approximately ~chunk_size words/tokens
-    with ~chunk_overlap word overlap.
+    Splits extracted pages into semantic chunks respecting paragraph and sentence
+    boundaries where possible, falling back to word sliding windows for monolithic text.
     Returns: [{"chunk_index": int, "page_number": Optional[int], "content": str}]
     """
     chunks: List[Dict[str, Any]] = []
@@ -79,23 +83,68 @@ def chunk_document_pages(
     for page in pages:
         page_num = page.get("page")
         text = page.get("text", "")
-        if not text:
+        if not text or not text.strip():
             continue
 
-        words = text.split()
-        if not words:
-            continue
+        raw_paragraphs = [p.strip() for p in re.split(r'\n\s*\n', text) if p.strip()]
+        if not raw_paragraphs:
+            raw_paragraphs = [text.strip()]
 
-        step = max(1, chunk_size - chunk_overlap)
-        for i in range(0, len(words), step):
-            chunk_words = words[i : i + chunk_size]
-            content = " ".join(chunk_words).strip()
-            if len(content) > 10:  # Skip trivial fragments
+        current_chunk_words: List[str] = []
+
+        def flush_current_chunk():
+            nonlocal chunk_index, current_chunk_words
+            if not current_chunk_words:
+                return
+            content = " ".join(current_chunk_words).strip()
+            if len(content) > 10:
                 chunks.append({
                     "chunk_index": chunk_index,
                     "page_number": page_num,
                     "content": content
                 })
                 chunk_index += 1
+            if chunk_overlap > 0 and len(current_chunk_words) > chunk_overlap:
+                current_chunk_words = current_chunk_words[-chunk_overlap:]
+            else:
+                current_chunk_words = []
+
+        for para in raw_paragraphs:
+            para_words = para.split()
+            if not para_words:
+                continue
+
+            if len(para_words) > chunk_size:
+                flush_current_chunk()
+                sentences = [s.strip() for s in re.split(r'(?<=[.!?؟\n])\s+', para) if s.strip()]
+                for sentence in sentences:
+                    sent_words = sentence.split()
+                    if not sent_words:
+                        continue
+                    if len(sent_words) > chunk_size:
+                        flush_current_chunk()
+                        step = max(1, chunk_size - chunk_overlap)
+                        for i in range(0, len(sent_words), step):
+                            slice_words = sent_words[i : i + chunk_size]
+                            slice_content = " ".join(slice_words).strip()
+                            if len(slice_content) > 10:
+                                chunks.append({
+                                    "chunk_index": chunk_index,
+                                    "page_number": page_num,
+                                    "content": slice_content
+                                })
+                                chunk_index += 1
+                    elif len(current_chunk_words) + len(sent_words) > chunk_size:
+                        flush_current_chunk()
+                        current_chunk_words.extend(sent_words)
+                    else:
+                        current_chunk_words.extend(sent_words)
+            elif len(current_chunk_words) + len(para_words) > chunk_size:
+                flush_current_chunk()
+                current_chunk_words.extend(para_words)
+            else:
+                current_chunk_words.extend(para_words)
+
+        flush_current_chunk()
 
     return chunks

@@ -8,7 +8,6 @@ import {
   Mic, 
   Square, 
   Volume2, 
-  VolumeX, 
   RotateCcw, 
   FileText, 
   Trash2, 
@@ -19,6 +18,8 @@ import {
   Globe,
   Layers,
   ArrowLeft,
+  Check,
+  X,
   Headphones
 } from 'lucide-react';
 import { API_BASE_URL } from '../config/api';
@@ -46,6 +47,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
   const fileInputRef = useRef(null);
   const messagesEndRef = useRef(null);
   const textareaRef = useRef(null);
+  const streamAbortRef = useRef(null);
 
   const {
     speak,
@@ -53,6 +55,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
     isSpeaking,
     startRecording,
     stopRecording,
+    cancelRecording,
     isRecording,
     recordingSeconds
   } = useSpeech(token);
@@ -95,6 +98,11 @@ export default function ChatAgentPage({ navigateToFeed }) {
   // Reset Session
   const handleNewChat = useCallback(async () => {
     stopSpeaking();
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+      streamAbortRef.current = null;
+    }
+    setIsStreaming(false);
     const newId = crypto.randomUUID();
     setChatSessionId(newId);
     setMessages([]);
@@ -103,6 +111,14 @@ export default function ChatAgentPage({ navigateToFeed }) {
     setInputQuery('');
     setUploadError('');
   }, [stopSpeaking]);
+
+  useEffect(() => {
+    return () => {
+      if (streamAbortRef.current) {
+        streamAbortRef.current.abort();
+      }
+    };
+  }, []);
 
   // Document Upload
   const handleFileUpload = async (e) => {
@@ -154,17 +170,46 @@ export default function ChatAgentPage({ navigateToFeed }) {
     }
   };
 
-  // Voice recording toggle
+  // Voice recording handlers
+  const handleStopRecording = async () => {
+    if (!isRecording) return;
+    try {
+      const transcript = await stopRecording();
+      if (transcript && transcript.trim()) {
+        const cleanTranscript = transcript.trim();
+        const textarea = textareaRef.current;
+        if (textarea) {
+          const start = textarea.selectionStart ?? inputQuery.length;
+          const end = textarea.selectionEnd ?? inputQuery.length;
+          const before = inputQuery.substring(0, start);
+          const after = inputQuery.substring(end);
+          const spaceBefore = (before && !before.endsWith(' ') && !before.endsWith('\n')) ? ' ' : '';
+          const spaceAfter = (after && !after.startsWith(' ') && !after.startsWith('\n')) ? ' ' : '';
+          const newText = `${before}${spaceBefore}${cleanTranscript}${spaceAfter}${after}`;
+          setInputQuery(newText);
+          setTimeout(() => {
+            if (textareaRef.current) {
+              textareaRef.current.focus();
+              const newPos = start + spaceBefore.length + cleanTranscript.length;
+              textareaRef.current.setSelectionRange(newPos, newPos);
+            }
+          }, 50);
+        } else {
+          setInputQuery((prev) => (prev ? `${prev} ${cleanTranscript}` : cleanTranscript));
+        }
+      }
+    } catch (err) {
+      setUploadError(err.message || 'Voice recording failed.');
+    }
+  };
+
+  const handleCancelRecording = () => {
+    cancelRecording();
+  };
+
   const handleMicClick = async () => {
     if (isRecording) {
-      try {
-        const transcript = await stopRecording();
-        if (transcript) {
-          setInputQuery((prev) => (prev ? `${prev} ${transcript}` : transcript));
-        }
-      } catch (err) {
-        setUploadError(err.message || 'Voice recording failed.');
-      }
+      await handleStopRecording();
     } else {
       try {
         setUploadError('');
@@ -215,9 +260,16 @@ export default function ChatAgentPage({ navigateToFeed }) {
     setMessages((prev) => [...prev, userMessage]);
     setIsStreaming(true);
 
+    if (streamAbortRef.current) {
+      streamAbortRef.current.abort();
+    }
+    const abortController = new AbortController();
+    streamAbortRef.current = abortController;
+
     try {
       const response = await fetch(`${API_BASE_URL}/chat/stream`, {
         method: 'POST',
+        signal: abortController.signal,
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { 'Authorization': `Bearer ${token}` } : {})
@@ -295,6 +347,8 @@ export default function ChatAgentPage({ navigateToFeed }) {
         setMessages((prev) => [...prev, assistantMessage]);
       }
     } catch (err) {
+      if (err.name === 'AbortError') return;
+
       setMessages((prev) => [
         ...prev,
         {
@@ -309,6 +363,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
     } finally {
       setIsStreaming(false);
       setCurrentSteps([]);
+      streamAbortRef.current = null;
     }
   };
 
@@ -334,11 +389,10 @@ export default function ChatAgentPage({ navigateToFeed }) {
             </button>
           )}
           <div className="chat-title-group">
-            <div className="chat-eyebrow">
-              <Sparkles size={13} className="sparkle-icon" />
-              <span>AI STUDIO CHATBOT</span>
-            </div>
-            <h1 className="chat-title">Hybrid RAG & Research Assistant</h1>
+            <h1 className="chat-main-title">
+              <Sparkles size={22} className="sparkle-icon" />
+              <span className="chat-main-title-text">AI STUDIO CHATBOT</span>
+            </h1>
           </div>
         </div>
 
@@ -488,7 +542,7 @@ export default function ChatAgentPage({ navigateToFeed }) {
                     </div>
 
                     <div className="bubble-meta-actions">
-                      {msg.sourcesUsed && msg.sourcesUsed !== 'Error' && (
+                      {msg.sourcesUsed && msg.sourcesUsed !== 'Error' && msg.sourcesUsed !== 'None' && (
                         <span className={`source-badge badge-${msg.sourcesUsed.toLowerCase().replace(/[\s+]+/g, '-')}`}>
                           {msg.sourcesUsed === 'Documents' && <FileCheck size={11} />}
                           {msg.sourcesUsed === 'Web' && <Globe size={11} />}
@@ -504,7 +558,12 @@ export default function ChatAgentPage({ navigateToFeed }) {
                         title={isSpeaking && speakingMessageId === msg.id ? 'Stop reading' : 'Read aloud'}
                       >
                         {isSpeaking && speakingMessageId === msg.id ? (
-                          <VolumeX size={14} />
+                          <div className="active-soundwave" aria-label="Speaking">
+                            <span className="wave-bar bar-1" />
+                            <span className="wave-bar bar-2" />
+                            <span className="wave-bar bar-3" />
+                            <Square size={9} className="stop-sq-icon" />
+                          </div>
                         ) : (
                           <Volume2 size={14} />
                         )}
@@ -582,6 +641,43 @@ export default function ChatAgentPage({ navigateToFeed }) {
 
       {/* Input Form Bar */}
       <footer className="chat-input-bar-container">
+        {isRecording && (
+          <div className="dictation-active-bar" role="status" aria-label="Audio Recording Active">
+            <div className="dictation-status-info">
+              <span className="rec-pulse-dot" />
+              <div className="dictation-waveform">
+                <span className="wave-bar bar-1" />
+                <span className="wave-bar bar-2" />
+                <span className="wave-bar bar-3" />
+                <span className="wave-bar bar-4" />
+              </div>
+              <span className="dictation-timer">{recordingSeconds}s</span>
+              <span className="dictation-hint">Listening... (Arabic or English)</span>
+            </div>
+
+            <div className="dictation-actions">
+              <button
+                type="button"
+                className="dictation-cancel-btn"
+                onClick={handleCancelRecording}
+                title="Discard recording without inserting"
+              >
+                <X size={13} />
+                <span>Cancel</span>
+              </button>
+              <button
+                type="button"
+                className="dictation-done-btn"
+                onClick={handleStopRecording}
+                title="Finish recording and insert text"
+              >
+                <Check size={13} />
+                <span>Done</span>
+              </button>
+            </div>
+          </div>
+        )}
+
         <form onSubmit={handleSendMessage} className="chat-input-form">
           <div className="input-textarea-wrapper">
             <textarea

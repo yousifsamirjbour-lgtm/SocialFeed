@@ -333,6 +333,126 @@ async def test_gemini_embeddings_model_configuration():
         assert model.model == "models/gemini-embedding-001"
         assert model.output_dimensionality == 768
 
+@pytest.mark.asyncio
+async def test_multiturn_state_and_prompt_assembly(monkeypatch):
+    from unittest.mock import AsyncMock
+    from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
+    from backend.agents.chat_nodes import generate_answer_node
+
+    captured_messages = []
+
+    class MockChatGroq:
+        def __init__(self, **kwargs):
+            pass
+        async def ainvoke(self, messages, **kwargs):
+            nonlocal captured_messages
+            captured_messages = messages
+            return AIMessage(content="You told me your name is Alice.")
+
+    import backend.agents.chat_nodes as cn
+    monkeypatch.setattr(cn, "get_groq_llm", lambda **kwargs: MockChatGroq())
+
+    prior_history = [
+        HumanMessage(content="Hello! My name is Alice."),
+        AIMessage(content="Nice to meet you, Alice!"),
+        HumanMessage(content="What did I just say?"),  # current query in state messages
+    ]
+
+    state = {
+        "query": "What did I just say?",
+        "messages": prior_history,
+        "retrieved_docs": [],
+        "web_docs": [],
+        "is_sufficient": True,
+        "sources_used": "None"
+    }
+
+    res = await generate_answer_node(state)
+    assert res["final_answer"] == "You told me your name is Alice."
+    assert len(res["messages"]) == 1
+    assert isinstance(res["messages"][0], AIMessage)
+
+    # Validate message structure sent to LLM
+    assert len(captured_messages) == 4
+    assert isinstance(captured_messages[0], SystemMessage)
+    assert isinstance(captured_messages[1], HumanMessage)
+    assert captured_messages[1].content == "Hello! My name is Alice."
+    assert isinstance(captured_messages[2], AIMessage)
+    assert captured_messages[2].content == "Nice to meet you, Alice!"
+    assert isinstance(captured_messages[3], HumanMessage)
+    assert "User Question: What did I just say?" in captured_messages[3].content
+
+@pytest.mark.asyncio
+async def test_web_search_fallback_ignores_irrelevant_docs(monkeypatch):
+    from langchain_core.messages import AIMessage
+    from backend.agents.chat_nodes import web_search_node, generate_answer_node
+
+    captured_prompt = ""
+
+    class MockChatGroq:
+        def __init__(self, **kwargs):
+            pass
+        async def ainvoke(self, messages, **kwargs):
+            nonlocal captured_prompt
+            captured_prompt = messages[-1].content
+    class MockTavilySearch:
+        def __init__(self, **kwargs):
+            pass
+        async def ainvoke(self, query):
+            return [
+                {"title": "Tokyo Weather", "url": "https://weather.com/tokyo", "content": "Current weather is 22C and sunny."}
+            ]
+
+    import backend.agents.chat_nodes as cn
+    monkeypatch.setattr(cn, "get_groq_llm", lambda **kwargs: MockChatGroq())
+    monkeypatch.setattr(cn, "TavilySearch", MockTavilySearch)
+
+    # State where docs were retrieved but evaluated as irrelevant (is_sufficient = False)
+    state = {
+        "query": "What is the weather in Tokyo?",
+        "retrieved_docs": [
+            {"filename": "company_handbook.pdf", "page_number": 1, "chunk_index": 0, "content": "Company vacation policy."}
+        ],
+        "is_sufficient": False,
+        "web_docs": []
+    }
+
+    # 1. web_search_node should set sources_used to "Web", NOT "Documents + Web"
+    ws_res = await web_search_node(state)
+    assert ws_res["sources_used"] == "Web"
+
+    state.update(ws_res)
+
+    # 2. generate_answer_node should NOT inject company_handbook.pdf into context
+    ans_res = await generate_answer_node(state)
+    assert ans_res["sources_used"] == "Web"
+    assert "company_handbook.pdf" not in captured_prompt
+    assert "Company vacation policy" not in captured_prompt
+    assert "Tokyo Weather" in captured_prompt
+    assert len(ans_res["citations"]) == 1
+    assert ans_res["citations"][0]["type"] == "web"
+    assert ans_res["citations"][0]["url"] == "https://weather.com/tokyo"
+
+@pytest.mark.asyncio
+async def test_semantic_chunking_paragraphs_and_arabic():
+    from backend.core.document_parser import chunk_document_pages
+
+    doc_text = (
+        "الفقرة الأولى تتحدث عن الذكاء الاصطناعي وتطوره السريع في العالم.\n\n"
+        "الفقرة الثانية تتناول معالجة اللغات الطبيعية وخاصة اللغة العربية ودقتها؟ وكيف تتكامل مع محركات البحث.\n\n"
+        "الفقرة الثالثة تلخص النتائج والتوصيات المستقبلية لهذا البحث."
+    )
+
+    pages = [{"page": 1, "text": doc_text}]
+    chunks = chunk_document_pages(pages, chunk_size=30, chunk_overlap=5)
+
+    assert len(chunks) >= 1
+    full_combined = " ".join([c["content"] for c in chunks])
+    assert "الذكاء الاصطناعي" in full_combined
+    assert "اللغة العربية" in full_combined
+    assert "النتائج والتوصيات" in full_combined
+
+
 
 
 

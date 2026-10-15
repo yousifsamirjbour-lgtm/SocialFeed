@@ -18,6 +18,7 @@ from backend.core.document_parser import (
     MAX_FILE_SIZE_BYTES,
     ALLOWED_EXTENSIONS
 )
+from langchain_core.messages import HumanMessage
 from backend.agents.chat_graph import chat_graph
 from backend.agents.hybrid_retriever import get_embeddings_model
 
@@ -270,7 +271,7 @@ async def stream_chat(
     }
 
     initial_state = {
-        "messages": [],
+        "messages": [HumanMessage(content=request.query)],
         "query": request.query,
         "mode": request.mode,
         "user_id": str(user.id),
@@ -280,7 +281,7 @@ async def stream_chat(
         "is_sufficient": False,
         "grade_reason": None,
         "web_docs": [],
-        "sources_used": "None",
+        "sources_used": None,
         "citations": [],
         "final_answer": ""
     }
