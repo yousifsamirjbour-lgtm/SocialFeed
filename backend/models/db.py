@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer
+from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer, JSON, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import Uuid
@@ -116,6 +116,14 @@ async_session_maker = async_sessionmaker(engine, expire_on_commit=False)
 
 async def create_db_and_tables():
     async with engine.begin() as conn:
+        if "postgresql" in engine.url.drivername:
+            res = await conn.execute(text("SELECT 1 FROM pg_extension WHERE extname = 'vector'"))
+            has_vector = res.scalar() is not None
+            if not has_vector:
+                # Local environment without C pgvector extension installed:
+                # Gracefully fallback column type to JSON so tables are created without crashing
+                DocumentChunk.__table__.columns['embedding'].type = JSON()
+
         await conn.run_sync(Base.metadata.create_all)
 
 async def get_async_session() -> AsyncGenerator[AsyncSession, None]:
