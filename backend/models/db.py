@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator
-from datetime import datetime, timezone
-from sqlalchemy import Column, String, Text, DateTime, ForeignKey, Integer, JSON, text
+from datetime import datetime, date, timezone
+from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Integer, JSON, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import Uuid
@@ -95,6 +95,18 @@ class DocumentChunk(Base):
     content = Column(Text, nullable=False)
     embedding = Column(Vector(768), nullable=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User", foreign_keys=[user_id])
+
+class VoiceDailyQuota(Base):
+    __tablename__ = "voice_daily_quotas"
+
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    usage_date = Column(Date, primary_key=True, default=date.today, nullable=False)
+    seconds_used = Column(Integer, default=0, nullable=False)
+    turns_count = Column(Integer, default=0, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
 
     user = relationship("User", foreign_keys=[user_id])
 
