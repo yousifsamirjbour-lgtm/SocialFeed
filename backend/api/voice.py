@@ -33,6 +33,15 @@ async def authenticate_websocket_token(token: str) -> Optional[User]:
         logger.warning(f"WebSocket token authentication failure: {e}")
     return None
 
+try:
+    from langsmith import traceable
+except ImportError:
+    def traceable(*args, **kwargs):
+        def decorator(f):
+            return f
+        return decorator
+
+@traceable(name="voice_turn", run_type="chain")
 async def run_voice_turn(
     websocket: WebSocket,
     session: VoiceSession,
@@ -40,7 +49,7 @@ async def run_voice_turn(
     turn_id: int,
     wav_bytes: bytes
 ):
-    """Executes a single conversational voice turn: STT -> Quota -> LLM -> TTS Stream."""
+    """Executes a single conversational voice turn: STT -> Quota -> Concurrent LLM Stream & Background TTS."""
     try:
         await websocket.send_text(json.dumps({
             "type": "turn_start",
@@ -84,35 +93,59 @@ async def run_voice_turn(
         }))
         session.add_history("user", user_text)
 
-        # 4. Stream LLM chunks & parallelize TTS
-        full_assistant_text = ""
-        seq = 1
+        # 4. Stream LLM chunks & dispatch TTS synthesis concurrently in background tasks
+        full_assistant_text_parts = []
         lang = stt_result.get("language", "en")
+        chunk_queue: asyncio.Queue = asyncio.Queue()
 
-        async for chunk_text in stream_voice_llm_chunks(session.history, user_text, language=lang):
-            full_assistant_text = f"{full_assistant_text} {chunk_text}".strip()
-
+        async def synthesize_worker(sequence_num: int, text_content: str):
             try:
-                audio_bytes = await synthesize_voice_chunk(chunk_text, language=lang)
+                audio_bytes = await synthesize_voice_chunk(text_content, language=lang)
                 b64_audio = base64.b64encode(audio_bytes).decode("ascii")
-
-                await websocket.send_text(json.dumps({
+                return {
                     "type": "audio_chunk",
                     "turn_id": turn_id,
-                    "seq": seq,
-                    "text": chunk_text,
+                    "seq": sequence_num,
+                    "text": text_content,
                     "audio": b64_audio
-                }))
-            except TTSFallbackException as tts_err:
-                logger.warning(f"TTS fallback triggered for turn {turn_id} seq {seq}: {tts_err}")
-                await websocket.send_text(json.dumps({
+                }
+            except Exception as tts_err:
+                logger.warning(f"TTS fallback triggered for turn {turn_id} seq {sequence_num}: {tts_err}")
+                return {
                     "type": "tts_fallback",
                     "turn_id": turn_id,
-                    "seq": seq,
-                    "text": chunk_text
-                }))
+                    "seq": sequence_num,
+                    "text": text_content
+                }
 
-            seq += 1
+        async def stream_and_dispatch():
+            seq = 1
+            try:
+                async for chunk_text in stream_voice_llm_chunks(session.history, user_text, language=lang):
+                    full_assistant_text_parts.append(chunk_text)
+                    # Dispatch TTS task concurrently in background
+                    task = asyncio.create_task(synthesize_worker(seq, chunk_text))
+                    await chunk_queue.put(task)
+                    seq += 1
+            finally:
+                # Sentinel to indicate LLM generation complete
+                await chunk_queue.put(None)
+
+        producer_task = asyncio.create_task(stream_and_dispatch())
+
+        try:
+            while True:
+                task = await chunk_queue.get()
+                if task is None:
+                    break
+                payload = await task
+                await websocket.send_text(json.dumps(payload))
+            await producer_task
+        except asyncio.CancelledError:
+            producer_task.cancel()
+            raise
+
+        full_assistant_text = " ".join(full_assistant_text_parts).strip()
 
         # 5. Finalize turn
         await websocket.send_text(json.dumps({

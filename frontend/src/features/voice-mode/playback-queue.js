@@ -23,6 +23,11 @@ export class PlaybackQueue {
     if (!base64Audio) return;
 
     try {
+      // Ensure AudioContext is resumed before decodeAudioData
+      if (this.audioContext && this.audioContext.state === 'suspended') {
+        await this.audioContext.resume().catch(() => {});
+      }
+
       const binaryString = atob(base64Audio);
       const len = binaryString.length;
       const bytes = new Uint8Array(len);

@@ -20,7 +20,7 @@ export class VoiceActivityDetector {
     onBargeIn,
     onUtteranceComplete,
     sampleRate = 16000,
-    silenceThresholdMs = 1100, // 1.1 seconds silence marks utterance completion
+    silenceThresholdMs = 800,  // 800ms silence marks utterance completion
     minUtteranceMs = 400       // Filter out clicks/coughs shorter than 400ms
   } = {}) {
     this.sampleRate = sampleRate;

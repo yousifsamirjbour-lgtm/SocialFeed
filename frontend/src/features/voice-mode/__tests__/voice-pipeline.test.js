@@ -100,6 +100,11 @@ describe('Voice Audio Pipeline - vad (Voice Activity Detection)', () => {
     expect(vad.isSpeaking).toBe(false);
     expect(vad.collectedChunks.length).toBe(0);
   });
+
+  it('defaults silenceThresholdMs to 800ms for low-latency turnaround', () => {
+    const vad = new VoiceActivityDetector();
+    expect(vad.silenceThresholdMs).toBe(800);
+  });
 });
 
 describe('Voice Audio Pipeline - playback-queue', () => {

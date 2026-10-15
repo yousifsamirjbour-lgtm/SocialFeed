@@ -6,13 +6,32 @@ from typing import Dict, Any, Optional
 import groq
 from fastapi.concurrency import run_in_threadpool
 
+try:
+    from langsmith import traceable
+except ImportError:
+    def traceable(*args, **kwargs):
+        def decorator(f):
+            return f
+        return decorator
+
 logger = logging.getLogger(__name__)
 
 # Known silence/noise hallucinations produced by Whisper models
 SILENCE_HALLUCINATION_PATTERNS = [
     r"^[\s\.\,\!\?؟\-_]*$",
-    r"^(thank you|thanks for watching|bye|goodbye|you)[\.\!\?؟\s]*$"
+    r"^(thank you|thanks for watching|subscribe to the channel|bye|goodbye|you)[\.\!\?؟\s]*$",
+    r"^(اشترك في القناة|شكرا للمشاهدة|شكراً للمشاهدة|شكرا لك|مع السلامة)[\.\!\?؟\s]*$"
 ]
+
+DISCARD_PHRASES = {
+    "thank you.", "thank you",
+    "thanks for watching.", "thanks for watching",
+    "subscribe to the channel", "subscribe to the channel.",
+    "اشترك في القناة", "اشترك في القناة.",
+    "شكرا للمشاهدة", "شكرا للمشاهدة.",
+    "شكراً للمشاهدة", "شكراً للمشاهدة.",
+    "."
+}
 
 def get_groq_client() -> groq.Groq:
     api_key = os.getenv("GROQ_API_KEY")
@@ -20,6 +39,7 @@ def get_groq_client() -> groq.Groq:
         raise ValueError("GROQ_API_KEY is not set.")
     return groq.Groq(api_key=api_key)
 
+@traceable(name="voice_whisper_stt", run_type="tool")
 async def transcribe_voice_utterance(
     wav_bytes: bytes,
     filename: str = "utterance.wav"
@@ -70,22 +90,47 @@ async def transcribe_voice_utterance(
         raw_duration = getattr(res, "duration", 0) or 0
         billed_duration = max(10, int(round(raw_duration)))
 
-        # 1. Check no_speech_prob on segments
+        # 1. Check no_speech_prob and avg_logprob across segments
         segments = getattr(res, "segments", []) or []
-        if segments:
-            no_speech = segments[0].get("no_speech_prob") if isinstance(segments[0], dict) else getattr(segments[0], "no_speech_prob", None)
-            if no_speech is not None and float(no_speech) > 0.65:
+        for seg in segments:
+            no_speech = seg.get("no_speech_prob") if isinstance(seg, dict) else getattr(seg, "no_speech_prob", None)
+            avg_logprob = seg.get("avg_logprob") if isinstance(seg, dict) else getattr(seg, "avg_logprob", None)
+
+            if no_speech is not None and float(no_speech) > 0.4:
+                logger.info(f"Discarding Whisper hallucination: high no_speech_prob ({float(no_speech):.2f} > 0.4)")
                 return {
                     "text": "",
                     "language": detected_language,
                     "duration_seconds": billed_duration,
                     "is_valid": False,
-                    "reason": f"High no_speech_prob ({no_speech:.2f})."
+                    "reason": f"High no_speech_prob ({float(no_speech):.2f} > 0.4)."
                 }
 
-        # 2. Check silence hallucination patterns
+            if avg_logprob is not None and float(avg_logprob) < -1.0:
+                logger.info(f"Discarding Whisper hallucination: low avg_logprob ({float(avg_logprob):.2f} < -1.0)")
+                return {
+                    "text": "",
+                    "language": detected_language,
+                    "duration_seconds": billed_duration,
+                    "is_valid": False,
+                    "reason": f"Low avg_logprob ({float(avg_logprob):.2f} < -1.0)."
+                }
+
+        # 2. Check exact discard phrases
+        if clean_text.lower() in DISCARD_PHRASES or clean_text in DISCARD_PHRASES:
+            logger.info(f"Discarding Whisper hallucination: matched discard phrase '{clean_text}'")
+            return {
+                "text": "",
+                "language": detected_language,
+                "duration_seconds": billed_duration,
+                "is_valid": False,
+                "reason": f"Filtered silence hallucination ('{clean_text}')."
+            }
+
+        # 3. Check silence hallucination regex patterns
         for pattern in SILENCE_HALLUCINATION_PATTERNS:
             if re.match(pattern, clean_text, re.IGNORECASE):
+                logger.info(f"Discarding Whisper hallucination: matched pattern '{pattern}' on '{clean_text}'")
                 return {
                     "text": "",
                     "language": detected_language,

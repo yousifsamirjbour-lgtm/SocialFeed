@@ -7,6 +7,14 @@ from typing import Optional, Dict
 import groq
 from fastapi.concurrency import run_in_threadpool
 
+try:
+    from langsmith import traceable
+except ImportError:
+    def traceable(*args, **kwargs):
+        def decorator(f):
+            return f
+        return decorator
+
 logger = logging.getLogger(__name__)
 
 # In-memory LRU cache for synthesized audio chunks
@@ -26,18 +34,24 @@ def get_groq_client() -> groq.Groq:
         raise ValueError("GROQ_API_KEY is not set.")
     return groq.Groq(api_key=api_key)
 
+@traceable(name="voice_orpheus_tts", run_type="tool")
 async def synthesize_voice_chunk(
     text: str,
     language: str = "en",
     voice: Optional[str] = None
 ) -> bytes:
     """
-    Synthesizes a short text chunk (<= 190 characters) using Groq Orpheus neural TTS.
+    Synthesizes a short text chunk (<= 140 characters) using Groq Orpheus neural TTS.
     Returns audio/wav bytes.
     """
     clean_text = text.strip()
     if not clean_text:
         return b""
+
+    # Defensive character clamp strictly below Orpheus limits
+    if len(clean_text) > 150:
+        truncated = clean_text[:140].rsplit(' ', 1)[0].strip()
+        clean_text = truncated if truncated else clean_text[:140]
 
     is_ar = (language.startswith("ar")) or is_arabic(clean_text)
     if is_ar:
@@ -61,10 +75,10 @@ async def synthesize_voice_chunk(
             input=clean_text,
             response_format="wav"
         )
-        if hasattr(response, "content"):
-            return response.content
         if hasattr(response, "read"):
             return response.read()
+        if hasattr(response, "content"):
+            return response.content
         return bytes(response)
 
     # Attempt synthesis with 1-shot retry on 429
@@ -87,7 +101,7 @@ async def synthesize_voice_chunk(
             raise TTSFallbackException(f"Orpheus rate limit reached: {e}")
 
         except Exception as e:
-            logger.error(f"Orpheus TTS error on '{clean_text[:30]}...': {e}")
+            logger.error(f"Orpheus TTS error on '{clean_text[:40]}' (len={len(clean_text)}): {e}")
             if attempt < max_attempts - 1:
                 await asyncio.sleep(0.8)
                 continue

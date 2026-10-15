@@ -213,3 +213,75 @@ async def test_websocket_daily_quota_exceeded(db_session, test_user, sync_client
             assert res["type"] == "quota_exceeded"
             ws.receive_text()
     assert exc.value.code == 1008
+
+@pytest.mark.asyncio
+async def test_whisper_hallucination_and_logprob_filtering(monkeypatch):
+    from backend.services.voice.stt import transcribe_voice_utterance
+
+    class MockSegment:
+        def __init__(self, no_speech_prob, avg_logprob):
+            self.no_speech_prob = no_speech_prob
+            self.avg_logprob = avg_logprob
+
+    class MockTranscriptionResponse:
+        def __init__(self, text, segments):
+            self.text = text
+            self.language = "en"
+            self.duration = 2.0
+            self.segments = segments
+
+    # 1. Test high no_speech_prob (> 0.4)
+    def mock_high_no_speech(*args, **kwargs):
+        return MockTranscriptionResponse("Some text", [MockSegment(0.45, -0.2)])
+
+    monkeypatch.setattr("backend.services.voice.stt.get_groq_client", lambda: type("C", (), {
+        "audio": type("A", (), {
+            "transcriptions": type("T", (), {"create": mock_high_no_speech})()
+        })()
+    })())
+    res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 8000)
+    assert not res["is_valid"]
+    assert "no_speech_prob" in res["reason"]
+
+    # 2. Test low avg_logprob (< -1.0)
+    def mock_low_logprob(*args, **kwargs):
+        return MockTranscriptionResponse("Mumbled text", [MockSegment(0.1, -1.25)])
+
+    monkeypatch.setattr("backend.services.voice.stt.get_groq_client", lambda: type("C", (), {
+        "audio": type("A", (), {
+            "transcriptions": type("T", (), {"create": mock_low_logprob})()
+        })()
+    })())
+    res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 8000)
+    assert not res["is_valid"]
+    assert "avg_logprob" in res["reason"]
+
+    # 3. Test discard phrases (e.g. 'اشترك في القناة', 'Thank you.', 'Thanks for watching.')
+    for phrase in ["Thank you.", "Thanks for watching.", "Subscribe to the channel", "اشترك في القناة", "شكرا للمشاهدة", "."]:
+        def mock_phrase(*args, **kwargs):
+            return MockTranscriptionResponse(phrase, [MockSegment(0.05, -0.1)])
+
+        monkeypatch.setattr("backend.services.voice.stt.get_groq_client", lambda: type("C", (), {
+            "audio": type("A", (), {
+                "transcriptions": type("T", (), {"create": mock_phrase})()
+            })()
+        })())
+        res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 8000)
+        assert not res["is_valid"], f"Expected '{phrase}' to be discarded"
+        assert "hallucination" in res["reason"]
+
+def test_chunk_length_and_sentence_splitting():
+    from backend.services.voice.llm import split_text_into_chunks, MAX_CHUNK_CHARS
+
+    assert MAX_CHUNK_CHARS <= 140
+
+    long_text = (
+        "Artificial intelligence and neural audio models are transforming real-time "
+        "spoken interfaces across the world, creating low latency natural voice interactions "
+        "that empower users to communicate naturally without keyboard or mouse input."
+    )
+    chunks = split_text_into_chunks(long_text, MAX_CHUNK_CHARS)
+    assert len(chunks) > 1
+    for c in chunks:
+        assert len(c) <= MAX_CHUNK_CHARS
+        assert len(c.strip()) > 0

@@ -72,6 +72,9 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
 
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
     const ctx = new AudioContextClass();
+    if (ctx.state === 'suspended') {
+      await ctx.resume().catch(() => {});
+    }
     audioContextRef.current = ctx;
 
     // Analyzer for UI visualizer
@@ -87,12 +90,14 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
       }
     });
 
-    // Request microphone access
+    // Request microphone access with full noise suppression & echo cancellation
     const stream = await navigator.mediaDevices.getUserMedia({
       audio: {
         echoCancellation: true,
         noiseSuppression: true,
-        autoGainControl: true
+        autoGainControl: true,
+        channelCount: 1,
+        sampleRate: 16000
       }
     });
     micStreamRef.current = stream;
@@ -100,8 +105,11 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
     const source = ctx.createMediaStreamSource(stream);
     source.connect(analyser);
 
-    // VAD Instance
+    // VAD Instance with 800ms silence threshold for low-latency turnaround
     const vad = new VoiceActivityDetector({
+      sampleRate: 16000,
+      silenceThresholdMs: 800,
+      minUtteranceMs: 400,
       onSpeechStart: () => {
         if (!isMutedRef.current) {
           setVoiceState('user_speaking');
@@ -212,12 +220,25 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
             playbackQueueRef.current?.enqueueBase64WAV(msg.seq, msg.audio, msg.text);
           }
         } else if (msg.type === 'tts_fallback') {
-          // Client speech synthesis fallback
+          // Client speech synthesis fallback with autoplay protection
           if (window.speechSynthesis && msg.text) {
-            const utterance = new SpeechSynthesisUtterance(msg.text);
-            utterance.onstart = () => setVoiceState('assistant_speaking');
-            utterance.onend = () => setVoiceState('listening');
-            window.speechSynthesis.speak(utterance);
+            try {
+              window.speechSynthesis.cancel();
+              if (window.speechSynthesis.paused) {
+                window.speechSynthesis.resume();
+              }
+              const utterance = new SpeechSynthesisUtterance(msg.text);
+              utterance.lang = /[\u0600-\u06FF]/.test(msg.text) ? 'ar-SA' : 'en-US';
+              utterance.onstart = () => setVoiceState('assistant_speaking');
+              utterance.onend = () => setVoiceState('listening');
+              utterance.onerror = (e) => {
+                console.warn('SpeechSynthesis error:', e);
+                setVoiceState('listening');
+              };
+              window.speechSynthesis.speak(utterance);
+            } catch (synthErr) {
+              console.warn('Speech synthesis playback error:', synthErr);
+            }
           }
         } else if (msg.type === 'turn_complete') {
           setTranscripts((prev) => ({

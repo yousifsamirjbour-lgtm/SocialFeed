@@ -5,9 +5,18 @@ from typing import AsyncGenerator, List, Dict, Any, Optional
 import groq
 from fastapi.concurrency import run_in_threadpool
 
+try:
+    from langsmith import traceable
+except ImportError:
+    def traceable(*args, **kwargs):
+        def decorator(f):
+            return f
+        return decorator
+
 logger = logging.getLogger(__name__)
 
-MAX_CHUNK_CHARS = 190  # Strictly bounded to <= 190 characters for Orpheus TTS hard limit (200)
+# Strictly bounded well below 190 characters to guarantee Orpheus never exceeds 200 limit
+MAX_CHUNK_CHARS = 135
 
 SYSTEM_PROMPT = (
     "You are a friendly, natural, real-time voice assistant for SocialFeed. "
@@ -76,6 +85,7 @@ def split_text_into_chunks(text: str, max_chars: int = MAX_CHUNK_CHARS) -> List[
 
     return chunks
 
+@traceable(name="voice_llm_stream", run_type="llm")
 async def stream_voice_llm_chunks(
     history: List[Dict[str, str]],
     user_query: str,
@@ -133,12 +143,12 @@ async def stream_voice_llm_chunks(
                 buffer = "".join(parts[2:])
 
                 if sentence:
-                    # Enforce strict 190-character chunking
+                    # Enforce strict character chunking well below 190
                     for sub_chunk in split_text_into_chunks(sentence, MAX_CHUNK_CHARS):
                         if sub_chunk:
                             yield sub_chunk
-            elif len(buffer) >= 160:
-                # If buffer is getting close to limit without sentence boundary, split on punctuation/words
+            elif len(buffer) >= 110:
+                # If buffer is getting long without sentence boundary, split on punctuation/words
                 chunks = split_text_into_chunks(buffer, MAX_CHUNK_CHARS)
                 if len(chunks) > 1:
                     for c in chunks[:-1]:
