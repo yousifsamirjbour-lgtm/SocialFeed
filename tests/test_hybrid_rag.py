@@ -112,3 +112,78 @@ async def test_chat_upload_and_attachments_api(client: AsyncClient, auth_headers
     resp = await client.get(f"/api/chat/attachments/{chat_session_id}", headers=auth_headers)
     assert resp.status_code == 200
     assert len(resp.json()) == 0
+
+@pytest.mark.asyncio
+async def test_route_mode_detection():
+    from backend.agents.chat_nodes import route_mode_node
+    
+    # 1. Standard auto
+    s1 = {"query": "What is Python?", "mode": "auto", "doc_count": 0}
+    r1 = await route_mode_node(s1)
+    assert r1["mode"] == "auto"
+
+    # 2. English phrase trigger
+    s2 = {"query": "Tell me the policy from my documents only please", "mode": "auto", "doc_count": 0}
+    r2 = await route_mode_node(s2)
+    assert r2["mode"] == "docs_only"
+
+    # 3. Arabic phrase trigger
+    s3 = {"query": "ما هي الميزانية فقط من المستندات", "mode": "auto", "doc_count": 0}
+    r3 = await route_mode_node(s3)
+    assert r3["mode"] == "docs_only"
+
+@pytest.mark.asyncio
+async def test_conditional_routing_logic():
+    from backend.agents.chat_graph import route_after_mode, route_after_grade
+
+    # route_after_mode
+    assert route_after_mode({"doc_count": 5, "mode": "auto"}) == "retrieve_docs"
+    assert route_after_mode({"doc_count": 5, "mode": "docs_only"}) == "retrieve_docs"
+    assert route_after_mode({"doc_count": 0, "mode": "docs_only"}) == "generate_refusal"
+    assert route_after_mode({"doc_count": 0, "mode": "auto"}) == "web_search"
+
+    # route_after_grade
+    assert route_after_grade({"is_sufficient": True, "mode": "auto"}) == "generate_answer"
+    assert route_after_grade({"is_sufficient": True, "mode": "docs_only"}) == "generate_answer"
+    assert route_after_grade({"is_sufficient": False, "mode": "docs_only"}) == "generate_refusal"
+    assert route_after_grade({"is_sufficient": False, "mode": "auto"}) == "web_search"
+
+@pytest.mark.asyncio
+async def test_generate_refusal_node():
+    from backend.agents.chat_nodes import generate_refusal_node
+
+    # English 0 docs
+    res_en_0 = await generate_refusal_node({"query": "What is our Q3 profit?", "doc_count": 0})
+    assert "Docs-Only" in res_en_0["final_answer"]
+    assert "no documents are attached" in res_en_0["final_answer"]
+    assert res_en_0["sources_used"] == "None"
+
+    # Arabic 0 docs
+    res_ar_0 = await generate_refusal_node({"query": "ما هي أرباح الربع الثالث؟", "doc_count": 0})
+    assert "المستندات فقط" in res_ar_0["final_answer"]
+    assert "لا توجد أي مستندات مرفقة" in res_ar_0["final_answer"]
+
+    # English docs attached but insufficient
+    res_en_insuf = await generate_refusal_node({"query": "What is our Q3 profit?", "doc_count": 2})
+    assert "do not contain sufficient evidence" in res_en_insuf["final_answer"]
+    assert res_en_insuf["sources_used"] == "Documents"
+
+@pytest.mark.asyncio
+async def test_stream_chat_endpoint_docs_only_refusal(client: AsyncClient, auth_headers: dict):
+    chat_session_id = str(uuid.uuid4())
+    req_payload = {
+        "query": "Tell me the confidential revenue strictly from documents only",
+        "chat_session_id": chat_session_id,
+        "mode": "docs_only"
+    }
+
+    resp = await client.post("/api/chat/stream", json=req_payload, headers=auth_headers)
+    assert resp.status_code == 200
+    assert "text/event-stream" in resp.headers["content-type"]
+
+    body = resp.text
+    assert "event: step" in body
+    assert "event: answer" in body
+    assert "event: complete" in body
+    assert "Docs-Only" in body
+

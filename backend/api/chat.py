@@ -1,7 +1,11 @@
+import os
+import json
 import uuid
 import logging
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, AsyncGenerator
 from fastapi import APIRouter, HTTPException, Depends, status, File, UploadFile, Form
+from fastapi.responses import StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, delete, func
 
@@ -14,6 +18,7 @@ from backend.core.document_parser import (
     MAX_FILE_SIZE_BYTES,
     ALLOWED_EXTENSIONS
 )
+from backend.agents.chat_graph import chat_graph
 
 logger = logging.getLogger(__name__)
 
@@ -221,3 +226,141 @@ async def delete_single_attachment(
         "chat_session_id": str(session_uuid),
         "deleted_count": res.rowcount
     }
+
+class ChatStreamRequest(BaseModel):
+    query: str = Field(..., min_length=1, max_length=2000)
+    chat_session_id: str
+    mode: str = Field("auto", pattern="^(auto|docs_only)$")
+
+@router.post("/stream")
+async def stream_chat(
+    request: ChatStreamRequest,
+    user: User = Depends(current_active_user),
+    session: AsyncSession = Depends(get_async_session)
+):
+    """
+    Initiates a streaming chat session with the LangGraph Hybrid RAG agent.
+    Returns a Server-Sent Events (SSE) stream reporting intermediate agent steps
+    and the finalized cited response.
+    """
+    try:
+        session_uuid = uuid.UUID(request.chat_session_id)
+    except (ValueError, TypeError):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid chat_session_id UUID format."
+        )
+
+    config = {
+        "configurable": {
+            "thread_id": str(session_uuid),
+            "session": session
+        }
+    }
+
+    initial_state = {
+        "messages": [],
+        "query": request.query,
+        "mode": request.mode,
+        "user_id": str(user.id),
+        "chat_session_id": str(session_uuid),
+        "doc_count": 0,
+        "retrieved_docs": [],
+        "is_sufficient": False,
+        "grade_reason": None,
+        "web_docs": [],
+        "sources_used": "None",
+        "citations": [],
+        "final_answer": ""
+    }
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        def format_sse(event_name: str, data: dict) -> str:
+            return f"event: {event_name}\ndata: {json.dumps(data)}\n\n"
+
+        yield format_sse("step", {
+            "name": "route_mode",
+            "status": "Routing request and checking document attachments..."
+        })
+
+        try:
+            last_state = dict(initial_state)
+            async for update in chat_graph.astream(initial_state, config=config, stream_mode="updates"):
+                for node_name, node_output in update.items():
+                    if not isinstance(node_output, dict):
+                        continue
+                    last_state.update(node_output)
+
+                    if node_name == "route_mode":
+                        mode_label = "Documents Only" if node_output.get("mode") == "docs_only" else "Auto"
+                        docs_found = node_output.get("doc_count", 0)
+                        yield format_sse("step", {
+                            "name": "route_mode",
+                            "status": f"Mode: {mode_label} ({docs_found} attached chunk(s) found)"
+                        })
+
+                    elif node_name == "retrieve_docs":
+                        docs = node_output.get("retrieved_docs", [])
+                        yield format_sse("step", {
+                            "name": "retrieve_docs",
+                            "status": f"Found {len(docs)} matching excerpt(s) in attached documents."
+                        })
+
+                    elif node_name == "grade_relevance":
+                        is_sufficient = node_output.get("is_sufficient", False)
+                        reason = node_output.get("grade_reason", "")
+                        if is_sufficient:
+                            yield format_sse("step", {
+                                "name": "grade_relevance",
+                                "status": "Document evidence is comprehensive. Generating answer..."
+                            })
+                        else:
+                            yield format_sse("step", {
+                                "name": "grade_relevance",
+                                "status": f"Document evidence insufficient ({reason}). Searching external sources..."
+                            })
+
+                    elif node_name == "web_search":
+                        web_docs = node_output.get("web_docs", [])
+                        yield format_sse("step", {
+                            "name": "web_search",
+                            "status": f"Retrieved {len(web_docs)} live web sources from Tavily."
+                        })
+
+                    elif node_name in ("generate_answer", "generate_refusal"):
+                        yield format_sse("step", {
+                            "name": node_name,
+                            "status": "Finalizing answer and references..."
+                        })
+
+            # Emit final answer event
+            yield format_sse("answer", {
+                "answer": last_state.get("final_answer", ""),
+                "sources_used": last_state.get("sources_used", "None"),
+                "citations": last_state.get("citations", []),
+                "mode": last_state.get("mode", request.mode),
+                "chat_session_id": str(session_uuid)
+            })
+
+            yield format_sse("complete", {
+                "chat_session_id": str(session_uuid),
+                "status": "done"
+            })
+
+        except Exception as e:
+            logger.error(f"Chat streaming error: {e}")
+            yield format_sse("error", {
+                "message": "AI Studio encountered an unexpected issue while generating the response.",
+                "detail": str(e) if os.getenv("TESTING") else None
+            })
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no"
+        }
+    )
+
