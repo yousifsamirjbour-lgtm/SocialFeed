@@ -17,6 +17,43 @@ export class PlaybackQueue {
     this.scheduledEndTime = 0;
     this.activeSourceNodes = new Set();
     this.isPlaying = false;
+    this.isTurnFinishedSending = true;
+  }
+
+  startTurn() {
+    for (const node of this.activeSourceNodes) {
+      try {
+        node.stop();
+        node.disconnect();
+      } catch (e) {}
+    }
+    this.activeSourceNodes.clear();
+    this.pendingChunks.clear();
+    this.nextExpectedSeq = 1;
+    this.scheduledEndTime = 0;
+    this.isPlaying = false;
+    this.isTurnFinishedSending = false;
+  }
+
+  markTurnComplete() {
+    this.isTurnFinishedSending = true;
+    if (this.activeSourceNodes.size === 0 && this.pendingChunks.size === 0) {
+      this.isPlaying = false;
+      this.scheduledEndTime = 0;
+      this.nextExpectedSeq = 1;
+      if (this.onQueueEmpty) this.onQueueEmpty();
+    }
+  }
+
+  isDrained() {
+    return this.activeSourceNodes.size === 0 && this.pendingChunks.size === 0;
+  }
+
+  skipSeq(seq) {
+    if (this.nextExpectedSeq === seq) {
+      this.nextExpectedSeq++;
+      this.schedulePending();
+    }
   }
 
   async enqueueBase64WAV(seq, base64Audio, text = '') {
@@ -88,8 +125,10 @@ export class PlaybackQueue {
         if (this.activeSourceNodes.size === 0 && this.pendingChunks.size === 0) {
           this.isPlaying = false;
           this.scheduledEndTime = 0;
-          this.nextExpectedSeq = 1; // Reset sequence counter so turn 2 starts cleanly at seq 1
-          if (this.onQueueEmpty) this.onQueueEmpty();
+          if (this.isTurnFinishedSending) {
+            this.nextExpectedSeq = 1; // Reset sequence counter so turn 2 starts cleanly at seq 1
+            if (this.onQueueEmpty) this.onQueueEmpty();
+          }
         }
       };
     }
@@ -110,6 +149,7 @@ export class PlaybackQueue {
     this.nextExpectedSeq = 1;
     this.scheduledEndTime = 0;
     this.isPlaying = false;
+    this.isTurnFinishedSending = true;
 
     if (this.onQueueEmpty) this.onQueueEmpty();
   }

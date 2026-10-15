@@ -25,6 +25,15 @@ class TTSFallbackException(Exception):
     """Raised when Groq Orpheus quota or API limit requires client-side TTS fallback."""
     pass
 
+# Pinned Groq Orpheus personas for 100% voice consistency across all chunks and turns
+PINNED_VOICE_EN = "autumn"
+PINNED_VOICE_AR = "fahad"
+
+PINNED_CONFIGS = {
+    "en": {"model": "canopylabs/orpheus-v1-english", "voice": PINNED_VOICE_EN},
+    "ar": {"model": "canopylabs/orpheus-arabic-saudi", "voice": PINNED_VOICE_AR},
+}
+
 def is_arabic(text: str) -> bool:
     return bool(re.search(r"[\u0600-\u06FF]", text))
 
@@ -42,7 +51,7 @@ async def synthesize_voice_chunk(
 ) -> bytes:
     """
     Synthesizes a short text chunk (<= 140 characters) using Groq Orpheus neural TTS.
-    Returns audio/wav bytes.
+    Returns audio/wav bytes with pinned voice persona consistency.
     """
     clean_text = text.strip()
     if not clean_text:
@@ -53,13 +62,11 @@ async def synthesize_voice_chunk(
         truncated = clean_text[:140].rsplit(' ', 1)[0].strip()
         clean_text = truncated if truncated else clean_text[:140]
 
+    # Enforce static pinned voice per language to prevent persona shifting mid-turn
     is_ar = (language.startswith("ar")) or is_arabic(clean_text)
-    if is_ar:
-        model = "canopylabs/orpheus-arabic-saudi"
-        chosen_voice = voice or "fahad"
-    else:
-        model = "canopylabs/orpheus-v1-english"
-        chosen_voice = voice or "autumn"
+    config = PINNED_CONFIGS["ar"] if is_ar else PINNED_CONFIGS["en"]
+    model = config["model"]
+    chosen_voice = voice or config["voice"]
 
     # Cache lookup
     cache_key = hashlib.sha256(f"{model}:{chosen_voice}:{clean_text}".encode("utf-8")).hexdigest()

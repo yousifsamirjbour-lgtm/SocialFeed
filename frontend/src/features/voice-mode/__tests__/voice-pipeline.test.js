@@ -101,9 +101,29 @@ describe('Voice Audio Pipeline - vad (Voice Activity Detection)', () => {
     expect(vad.collectedChunks.length).toBe(0);
   });
 
-  it('defaults silenceThresholdMs to 800ms for low-latency turnaround', () => {
+  it('defaults silenceThresholdMs to 800ms and minUtteranceMs to 500ms', () => {
     const vad = new VoiceActivityDetector();
     expect(vad.silenceThresholdMs).toBe(800);
+    expect(vad.minUtteranceMs).toBe(500);
+  });
+
+  it('drops short utterances under 500ms before emitting onUtteranceComplete', () => {
+    const onUtteranceComplete = vi.fn();
+    const vad = new VoiceActivityDetector({
+      sampleRate: 16000,
+      minUtteranceMs: 500,
+      onUtteranceComplete
+    });
+
+    // Feed 300ms of speech (4800 samples)
+    const shortChunk = new Float32Array(4800).fill(0.1);
+    vad.processChunk(shortChunk, false);
+
+    // Finish utterance (simulating silence trigger)
+    vad.finishUtterance();
+
+    // Must be dropped (never emit onUtteranceComplete)
+    expect(onUtteranceComplete).not.toHaveBeenCalled();
   });
 });
 
@@ -226,5 +246,79 @@ describe('Voice Audio Pipeline - playback-queue', () => {
     expect(queue.isPlaying).toBe(true);
     expect(queue.nextExpectedSeq).toBe(2);
     expect(mockAudioContext.createBufferSource).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not drop chunk 2 if chunk 1 finishes playing before chunk 2 arrives during streaming turn', async () => {
+    let endedCallback = null;
+    mockAudioContext.createBufferSource = vi.fn().mockImplementation(() => {
+      const node = {
+        buffer: null,
+        connect: vi.fn(),
+        start: vi.fn(),
+        stop: vi.fn(),
+        disconnect: vi.fn(),
+        onended: null
+      };
+      Object.defineProperty(node, 'onended', {
+        set(cb) { endedCallback = cb; },
+        get() { return endedCallback; }
+      });
+      return node;
+    });
+
+    const onQueueEmpty = vi.fn();
+    const queue = new PlaybackQueue(mockAudioContext, { onQueueEmpty });
+    const dummyBase64 = btoa('RIFF....WAVE');
+
+    // Turn starts streaming from assistant
+    queue.startTurn();
+
+    // Chunk 1 arrives and starts playing
+    await queue.enqueueBase64WAV(1, dummyBase64, 'First streamed sentence.');
+    expect(queue.isPlaying).toBe(true);
+    expect(queue.nextExpectedSeq).toBe(2);
+
+    // Chunk 1 finishes playing in the browser BEFORE chunk 2 finishes synthesis on server
+    if (endedCallback) endedCallback();
+    expect(queue.isPlaying).toBe(false);
+    // nextExpectedSeq must remain 2 (NOT reset to 1) so chunk 2 won't be trapped
+    expect(queue.nextExpectedSeq).toBe(2);
+    // onQueueEmpty must not be triggered prematurely while turn is in-flight
+    expect(onQueueEmpty).not.toHaveBeenCalled();
+
+    // Now chunk 2 arrives from the server
+    await queue.enqueueBase64WAV(2, dummyBase64, 'Second streamed sentence.');
+    // Chunk 2 immediately starts playing without being dropped!
+    expect(queue.isPlaying).toBe(true);
+    expect(queue.nextExpectedSeq).toBe(3);
+    expect(mockAudioContext.createBufferSource).toHaveBeenCalledTimes(2);
+
+    // Server finishes streaming and emits turn_complete
+    queue.markTurnComplete();
+    // Chunk 2 finishes playing
+    if (endedCallback) endedCallback();
+
+    // Now turn is finished, queue is drained, and resets cleanly for Turn 2
+    expect(queue.isPlaying).toBe(false);
+    expect(queue.nextExpectedSeq).toBe(1);
+    expect(onQueueEmpty).toHaveBeenCalledTimes(1);
+  });
+
+  it('skipSeq advances nextExpectedSeq when chunk is handled by client fallback', async () => {
+    const queue = new PlaybackQueue(mockAudioContext);
+    const dummyBase64 = btoa('RIFF....WAVE');
+
+    queue.startTurn();
+    await queue.enqueueBase64WAV(1, dummyBase64, 'Chunk 1');
+    expect(queue.nextExpectedSeq).toBe(2);
+
+    // Chunk 2 was handled by fallback SpeechSynthesis, so queue is told to skip seq 2
+    queue.skipSeq(2);
+    expect(queue.nextExpectedSeq).toBe(3);
+
+    // Chunk 3 arrives as audio_chunk
+    await queue.enqueueBase64WAV(3, dummyBase64, 'Chunk 3');
+    // Chunk 3 plays immediately because seq 2 was cleanly skipped!
+    expect(queue.nextExpectedSeq).toBe(4);
   });
 });

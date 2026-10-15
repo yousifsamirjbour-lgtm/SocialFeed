@@ -4,6 +4,7 @@ import base64
 import asyncio
 import logging
 import uuid
+import re
 from typing import Optional, Dict, Any
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -12,7 +13,7 @@ from backend.models.db import User, async_session_maker, SQLAlchemyUserDatabase
 from backend.core.users import UserManager, get_jwt_strategy, SECRET
 from backend.services.voice.stt import transcribe_voice_utterance
 from backend.services.voice.llm import stream_voice_llm_chunks
-from backend.services.voice.tts import synthesize_voice_chunk, TTSFallbackException
+from backend.services.voice.tts import synthesize_voice_chunk, TTSFallbackException, is_arabic
 from backend.services.voice.session_manager import voice_registry, VoiceSession
 
 logger = logging.getLogger(__name__)
@@ -81,13 +82,18 @@ async def run_voice_turn(
             }))
             return
 
-        # 3. Emit user transcript
+        # 3. Emit user transcript with deterministic turn language lock
         user_text = stt_result["text"]
+        detected_lang = stt_result.get("language", "en")
+        is_ar_turn = is_arabic(user_text) or str(detected_lang).lower().startswith("ar")
+        turn_lang = "ar" if is_ar_turn else "en"
+
         await websocket.send_text(json.dumps({
             "type": "transcript",
             "turn_id": turn_id,
             "role": "user",
             "text": user_text,
+            "language": turn_lang,
             "seconds_left": sec_left,
             "turns_left": trn_left
         }))
@@ -95,18 +101,18 @@ async def run_voice_turn(
 
         # 4. Stream LLM chunks & dispatch TTS synthesis concurrently in background tasks
         full_assistant_text_parts = []
-        lang = stt_result.get("language", "en")
         chunk_queue: asyncio.Queue = asyncio.Queue()
 
         async def synthesize_worker(sequence_num: int, text_content: str):
             try:
-                audio_bytes = await synthesize_voice_chunk(text_content, language=lang)
+                audio_bytes = await synthesize_voice_chunk(text_content, language=turn_lang)
                 b64_audio = base64.b64encode(audio_bytes).decode("ascii")
                 return {
                     "type": "audio_chunk",
                     "turn_id": turn_id,
                     "seq": sequence_num,
                     "text": text_content,
+                    "language": turn_lang,
                     "audio": b64_audio
                 }
             except Exception as tts_err:
@@ -115,13 +121,14 @@ async def run_voice_turn(
                     "type": "tts_fallback",
                     "turn_id": turn_id,
                     "seq": sequence_num,
+                    "language": turn_lang,
                     "text": text_content
                 }
 
         async def stream_and_dispatch():
             seq = 1
             try:
-                async for chunk_text in stream_voice_llm_chunks(session.history, user_text, language=lang):
+                async for chunk_text in stream_voice_llm_chunks(session.history, user_text, language=turn_lang):
                     full_assistant_text_parts.append(chunk_text)
                     # Dispatch TTS task concurrently in background
                     task = asyncio.create_task(synthesize_worker(seq, chunk_text))
@@ -151,6 +158,7 @@ async def run_voice_turn(
         await websocket.send_text(json.dumps({
             "type": "turn_complete",
             "turn_id": turn_id,
+            "language": turn_lang,
             "assistant_transcript": full_assistant_text,
             "seconds_left": sec_left,
             "turns_left": trn_left

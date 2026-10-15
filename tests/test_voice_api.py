@@ -290,8 +290,14 @@ async def test_whisper_hallucination_and_logprob_filtering(monkeypatch):
             self.duration = 2.0
             self.segments = segments
 
-    # 1. Test high no_speech_prob (> 0.4)
+    # 1. Test short audio rejection (< 500ms / 16,000 bytes)
+    res_short = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 8000)
+    assert not res_short["is_valid"]
+    assert "under 500ms threshold" in res_short["reason"]
+
+    # 2. Test high no_speech_prob (> 0.4) on valid duration audio
     def mock_high_no_speech(*args, **kwargs):
+        assert "prompt" in kwargs, "Whisper initial prompt must be passed to transcriptions.create"
         return MockTranscriptionResponse("Some text", [MockSegment(0.45, -0.2)])
 
     monkeypatch.setattr("backend.services.voice.stt.get_groq_client", lambda: type("C", (), {
@@ -299,11 +305,11 @@ async def test_whisper_hallucination_and_logprob_filtering(monkeypatch):
             "transcriptions": type("T", (), {"create": mock_high_no_speech})()
         })()
     })())
-    res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 8000)
+    res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 16500)
     assert not res["is_valid"]
     assert "no_speech_prob" in res["reason"]
 
-    # 2. Test low avg_logprob (< -1.0)
+    # 3. Test low avg_logprob (< -1.0)
     def mock_low_logprob(*args, **kwargs):
         return MockTranscriptionResponse("Mumbled text", [MockSegment(0.1, -1.25)])
 
@@ -312,12 +318,12 @@ async def test_whisper_hallucination_and_logprob_filtering(monkeypatch):
             "transcriptions": type("T", (), {"create": mock_low_logprob})()
         })()
     })())
-    res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 8000)
+    res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 16500)
     assert not res["is_valid"]
     assert "avg_logprob" in res["reason"]
 
-    # 3. Test discard phrases (e.g. 'اشترك في القناة', 'Thank you.', 'Thanks for watching.')
-    for phrase in ["Thank you.", "Thanks for watching.", "Subscribe to the channel", "اشترك في القناة", "شكرا للمشاهدة", "."]:
+    # 4. Test discard phrases (e.g. 'اشترك في القناة', 'Thank you.', 'Thanks for watching.', 'سبحان الله وبحمده')
+    for phrase in ["Thank you.", "Thanks for watching.", "Subscribe to the channel", "اشترك في القناة", "شكرا للمشاهدة", "سبحان الله وبحمده", "."]:
         def mock_phrase(*args, **kwargs):
             return MockTranscriptionResponse(phrase, [MockSegment(0.05, -0.1)])
 
@@ -326,7 +332,7 @@ async def test_whisper_hallucination_and_logprob_filtering(monkeypatch):
                 "transcriptions": type("T", (), {"create": mock_phrase})()
             })()
         })())
-        res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 8000)
+        res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 16500)
         assert not res["is_valid"], f"Expected '{phrase}' to be discarded"
         assert "hallucination" in res["reason"]
 
@@ -345,3 +351,209 @@ def test_chunk_length_and_sentence_splitting():
     for c in chunks:
         assert len(c) <= MAX_CHUNK_CHARS
         assert len(c.strip()) > 0
+
+@pytest.mark.asyncio
+async def test_whisper_arabic_comprehension_and_normalization(monkeypatch):
+    from backend.services.voice.stt import transcribe_voice_utterance
+
+    class MockArabicResponse:
+        def __init__(self):
+            self.text = "مرحبا كيف يمكنني نشر منشور جديد؟"
+            self.language = "ur"  # Simulate Whisper misdetecting Arabic as Urdu
+            self.duration = 2.5
+            self.segments = []
+
+    def mock_transcribe(*args, **kwargs):
+        assert "prompt" in kwargs
+        assert "مرحبا" in kwargs["prompt"]
+        return MockArabicResponse()
+
+    monkeypatch.setattr("backend.services.voice.stt.get_groq_client", lambda: type("C", (), {
+        "audio": type("A", (), {
+            "transcriptions": type("T", (), {"create": mock_transcribe})()
+        })()
+    })())
+
+    res = await transcribe_voice_utterance(b"RIFF" + b"\x00" * 16500)
+    assert res["is_valid"]
+    assert res["language"] == "ar"  # Must normalize to Arabic
+    assert "منشور جديد" in res["text"]
+
+@pytest.mark.asyncio
+async def test_pinned_orpheus_voices_consistency(monkeypatch):
+    from backend.services.voice.tts import (
+        synthesize_voice_chunk,
+        PINNED_VOICE_EN,
+        PINNED_VOICE_AR,
+        PINNED_CONFIGS
+    )
+
+    class MockAudioResp:
+        def read(self):
+            return b"RIFF....WAVE"
+
+    recorded_calls = []
+
+    def mock_speech_create(*args, **kwargs):
+        recorded_calls.append(kwargs)
+        return MockAudioResp()
+
+    monkeypatch.setattr("backend.services.voice.tts.get_groq_client", lambda: type("C", (), {
+        "audio": type("A", (), {
+            "speech": type("S", (), {"create": staticmethod(mock_speech_create)})()
+        })()
+    })())
+
+    # English synthesis
+    await synthesize_voice_chunk("Hello world", language="en")
+    assert recorded_calls[-1]["model"] == "canopylabs/orpheus-v1-english"
+    assert recorded_calls[-1]["voice"] == PINNED_VOICE_EN
+
+    # Arabic synthesis
+    await synthesize_voice_chunk("مرحبا بك", language="ar")
+    assert recorded_calls[-1]["model"] == "canopylabs/orpheus-arabic-saudi"
+    assert recorded_calls[-1]["voice"] == PINNED_VOICE_AR
+
+def test_multi_turn_bilingual_exact_sequence_and_pinned_voice_verification(sync_client, valid_token, monkeypatch):
+    """
+    End-to-End verification:
+    1. The WebSocket handles 3 consecutive bilingual turns (EN -> AR -> EN) without crashing.
+    2. The sequence IDs for audio chunks are processed in exact numerical order (seq: 1, 2, 3).
+    3. The TTS voice ID and model remain static per persona across all chunks and turns.
+    """
+    current_turn = 0
+    tts_calls = []
+
+    class MockAudioResp:
+        def read(self):
+            return b"RIFF....WAVE"
+
+    async def mock_stt(wav_bytes):
+        nonlocal current_turn
+        current_turn += 1
+        if current_turn == 1:
+            return {"text": "How is the weather today?", "language": "en", "duration_seconds": 10, "is_valid": True, "reason": "OK"}
+        elif current_turn == 2:
+            return {"text": "كيف يمكنني استخدام هذا التطبيق؟", "language": "ar", "duration_seconds": 12, "is_valid": True, "reason": "OK"}
+        else:
+            return {"text": "Thank you for the quick explanation!", "language": "en", "duration_seconds": 10, "is_valid": True, "reason": "OK"}
+
+    monkeypatch.setattr("backend.api.voice.transcribe_voice_utterance", mock_stt)
+
+    async def mock_llm_stream(history, user_query, language="en"):
+        if language == "ar":
+            yield "أهلاً بك في منصة التواصل."
+            yield "يمكنك إنشاء ومشاركة المنشورات بسهولة."
+        else:
+            yield "The weather is pleasant and clear today."
+            yield "Let me know if you need anything else."
+            yield "Have a wonderful day."
+
+    monkeypatch.setattr("backend.api.voice.stream_voice_llm_chunks", mock_llm_stream)
+
+    def mock_speech_create(*args, **kwargs):
+        tts_calls.append(kwargs)
+        return MockAudioResp()
+
+    monkeypatch.setattr("backend.services.voice.tts.get_groq_client", lambda: type("C", (), {
+        "audio": type("A", (), {
+            "speech": type("S", (), {"create": staticmethod(mock_speech_create)})()
+        })()
+    })())
+
+    with sync_client.websocket_connect("/api/voice/stream") as ws:
+        # Handshake
+        ws.send_text(json.dumps({"type": "auth", "token": valid_token}))
+        assert json.loads(ws.receive_text())["type"] == "auth_ok"
+
+        # --- TURN 1 (English, 3 chunks) ---
+        ws.send_text(json.dumps({"type": "user_audio_header", "turn_id": 1, "duration_ms": 1500}))
+        ws.send_bytes(b"RIFF" + b"\x00" * 16500)
+
+        assert json.loads(ws.receive_text())["type"] == "turn_start"
+        t1 = json.loads(ws.receive_text())
+        assert t1["type"] == "transcript"
+        assert t1["language"] == "en"
+
+        c1 = json.loads(ws.receive_text())
+        assert c1["type"] == "audio_chunk"
+        assert c1["seq"] == 1
+        assert c1["language"] == "en"
+
+        c2 = json.loads(ws.receive_text())
+        assert c2["type"] == "audio_chunk"
+        assert c2["seq"] == 2
+        assert c2["language"] == "en"
+
+        c3 = json.loads(ws.receive_text())
+        assert c3["type"] == "audio_chunk"
+        assert c3["seq"] == 3
+        assert c3["language"] == "en"
+
+        comp1 = json.loads(ws.receive_text())
+        assert comp1["type"] == "turn_complete"
+        assert comp1["turn_id"] == 1
+        assert comp1["language"] == "en"
+
+        # Verify English persona was pinned to "autumn" for all 3 chunks in Turn 1
+        turn1_tts = tts_calls[-3:]
+        assert len(turn1_tts) == 3
+        for call in turn1_tts:
+            assert call["model"] == "canopylabs/orpheus-v1-english"
+            assert call["voice"] == "autumn"
+
+        # --- TURN 2 (Arabic, 2 chunks) ---
+        ws.send_text(json.dumps({"type": "user_audio_header", "turn_id": 2, "duration_ms": 1800}))
+        ws.send_bytes(b"RIFF" + b"\x00" * 16500)
+
+        assert json.loads(ws.receive_text())["type"] == "turn_start"
+        t2 = json.loads(ws.receive_text())
+        assert t2["type"] == "transcript"
+        assert t2["language"] == "ar"
+
+        c2_1 = json.loads(ws.receive_text())
+        assert c2_1["type"] == "audio_chunk"
+        assert c2_1["seq"] == 1
+        assert c2_1["language"] == "ar"
+
+        c2_2 = json.loads(ws.receive_text())
+        assert c2_2["type"] == "audio_chunk"
+        assert c2_2["seq"] == 2
+        assert c2_2["language"] == "ar"
+
+        comp2 = json.loads(ws.receive_text())
+        assert comp2["type"] == "turn_complete"
+        assert comp2["turn_id"] == 2
+        assert comp2["language"] == "ar"
+
+        # Verify Arabic persona was pinned to "fahad" for all 2 chunks in Turn 2
+        turn2_tts = tts_calls[-2:]
+        assert len(turn2_tts) == 2
+        for call in turn2_tts:
+            assert call["model"] == "canopylabs/orpheus-arabic-saudi"
+            assert call["voice"] == "fahad"
+
+        # --- TURN 3 (English, 3 chunks) ---
+        ws.send_text(json.dumps({"type": "user_audio_header", "turn_id": 3, "duration_ms": 1200}))
+        ws.send_bytes(b"RIFF" + b"\x00" * 16500)
+
+        assert json.loads(ws.receive_text())["type"] == "turn_start"
+        t3 = json.loads(ws.receive_text())
+        assert t3["type"] == "transcript"
+        assert t3["language"] == "en"
+
+        c3_1 = json.loads(ws.receive_text())
+        assert c3_1["type"] == "audio_chunk"
+        assert c3_1["seq"] == 1
+
+        c3_2 = json.loads(ws.receive_text())
+        assert c3_2["type"] == "audio_chunk"
+        assert c3_2["seq"] == 2
+
+        c3_3 = json.loads(ws.receive_text())
+        assert c3_3["type"] == "audio_chunk"
+        assert c3_3["seq"] == 3
+
+        comp3 = json.loads(ws.receive_text())
+        assert comp3["type"] == "turn_complete"
+        assert comp3["turn_id"] == 3

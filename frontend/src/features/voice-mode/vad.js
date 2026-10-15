@@ -21,7 +21,7 @@ export class VoiceActivityDetector {
     onUtteranceComplete,
     sampleRate = 16000,
     silenceThresholdMs = 800,  // 800ms silence marks utterance completion
-    minUtteranceMs = 400       // Filter out clicks/coughs shorter than 400ms
+    minUtteranceMs = 500       // Hardened VAD: filter out noise/clicks shorter than 500ms
   } = {}) {
     this.sampleRate = sampleRate;
     this.silenceThresholdMs = silenceThresholdMs;
@@ -114,10 +114,12 @@ export class VoiceActivityDetector {
     }
     const durationMs = (totalSamplesCount / this.sampleRate) * 1000;
 
-    // Filter utterances below minimum duration threshold
-    if (durationMs >= this.minUtteranceMs) {
+    const preRollLen = this.preRollSamples ? this.preRollSamples.length : 0;
+    const totalUtteranceMs = ((preRollLen + totalSamplesCount) / this.sampleRate) * 1000;
+
+    // Strict VAD: Filter utterances below minimum 500ms duration threshold
+    if (durationMs >= this.minUtteranceMs && totalUtteranceMs >= 500) {
       // Assemble final array with pre-roll prepended
-      const preRollLen = this.preRollSamples ? this.preRollSamples.length : 0;
       const finalBuffer = new Float32Array(preRollLen + totalSamplesCount);
 
       if (this.preRollSamples) {
@@ -131,7 +133,7 @@ export class VoiceActivityDetector {
       }
 
       if (this.onUtteranceComplete) {
-        this.onUtteranceComplete(finalBuffer, durationMs + (preRollLen / this.sampleRate) * 1000);
+        this.onUtteranceComplete(finalBuffer, totalUtteranceMs);
       }
     }
 

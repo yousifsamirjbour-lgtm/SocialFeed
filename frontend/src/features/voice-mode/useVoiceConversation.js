@@ -119,11 +119,11 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
     const source = ctx.createMediaStreamSource(stream);
     source.connect(analyser);
 
-    // VAD Instance with 800ms silence threshold for low-latency turnaround
+    // VAD Instance with 800ms silence threshold and hardened 500ms minimum utterance
     const vad = new VoiceActivityDetector({
       sampleRate: 16000,
       silenceThresholdMs: 800,
-      minUtteranceMs: 400,
+      minUtteranceMs: 500,
       onSpeechStart: () => {
         if (!isMutedRef.current) {
           setVoiceState('user_speaking');
@@ -143,9 +143,9 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
         turnIdRef.current += 1;
         activeTurnIdRef.current = currentTurn;
 
-        // Reset playback queue for the upcoming response
+        // Start new turn in playback queue for the upcoming response
         if (playbackQueueRef.current) {
-          playbackQueueRef.current.resetTurn();
+          playbackQueueRef.current.startTurn();
         }
 
         // Encode to 16kHz mono WAV
@@ -240,26 +240,41 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
             playbackQueueRef.current?.enqueueBase64WAV(msg.seq, msg.audio, msg.text);
           }
         } else if (msg.type === 'tts_fallback') {
-          // Client speech synthesis fallback with autoplay protection
+          // Tell playback queue to skip this sequence number so it doesn't block future chunks
+          if (playbackQueueRef.current) {
+            playbackQueueRef.current.skipSeq(msg.seq);
+          }
           if (window.speechSynthesis && msg.text) {
             try {
-              window.speechSynthesis.cancel();
               if (window.speechSynthesis.paused) {
                 window.speechSynthesis.resume();
               }
+              const isAr = msg.language?.startsWith('ar') || /[\u0600-\u06FF]/.test(msg.text);
               const utterance = new SpeechSynthesisUtterance(msg.text);
-              utterance.lang = /[\u0600-\u06FF]/.test(msg.text) ? 'ar-SA' : 'en-US';
+              utterance.lang = isAr ? 'ar-SA' : 'en-US';
+
+              const voices = window.speechSynthesis.getVoices();
+              const matchedVoice = voices.find((v) => isAr ? v.lang.startsWith('ar') : v.lang.startsWith('en'));
+              if (matchedVoice) {
+                utterance.voice = matchedVoice;
+              }
+
               utterance.onstart = () => setVoiceState('assistant_speaking');
               utterance.onend = () => {
-                setVoiceState('listening');
-                if (vadRef.current) vadRef.current.reset();
-                if (workletNodeRef.current) workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+                if (playbackQueueRef.current?.isDrained()) {
+                  setVoiceState('listening');
+                  if (vadRef.current) vadRef.current.reset();
+                  if (workletNodeRef.current) workletNodeRef.current.port.postMessage({ command: 'get_preroll' });
+                }
               };
               utterance.onerror = (e) => {
                 console.warn('SpeechSynthesis error:', e);
-                setVoiceState('listening');
-                if (vadRef.current) vadRef.current.reset();
+                if (playbackQueueRef.current?.isDrained()) {
+                  setVoiceState('listening');
+                  if (vadRef.current) vadRef.current.reset();
+                }
               };
+              // Speak without cancelling prior queued chunks
               window.speechSynthesis.speak(utterance);
             } catch (synthErr) {
               console.warn('Speech synthesis playback error:', synthErr);
@@ -278,8 +293,13 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
           if (msg.seconds_left !== undefined) setSecondsLeft(msg.seconds_left);
           if (msg.turns_left !== undefined) setTurnsLeft(msg.turns_left);
 
-          // If audio has already finished or queue is not playing, return to listening immediately
-          if (!playbackQueueRef.current?.isPlaying) {
+          // Mark turn complete in playback queue so it can transition on queue empty
+          if (playbackQueueRef.current) {
+            playbackQueueRef.current.markTurnComplete();
+          }
+
+          // If audio has already completely drained, return to listening immediately
+          if (playbackQueueRef.current?.isDrained()) {
             setVoiceState('listening');
             if (vadRef.current) {
               vadRef.current.reset();

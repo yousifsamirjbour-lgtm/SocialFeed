@@ -98,7 +98,12 @@ async def stream_voice_llm_chunks(
     client = get_groq_client()
     model = os.getenv("VOICE_LLM_MODEL", "openai/gpt-oss-20b")
 
-    messages = [{"role": "system", "content": SYSTEM_PROMPT}]
+    lang_directive = (
+        "The user is speaking Arabic. You MUST respond exclusively in natural, fluent Arabic. Do NOT switch to English."
+        if language.startswith("ar")
+        else "The user is speaking English. You MUST respond exclusively in natural, fluent English."
+    )
+    messages = [{"role": "system", "content": f"{SYSTEM_PROMPT}\n\nLanguage Directive: {lang_directive}"}]
     # Add in-memory history (last 6 messages)
     for m in history[-6:]:
         messages.append({"role": m["role"], "content": m["content"]})

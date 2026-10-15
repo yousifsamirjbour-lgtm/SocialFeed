@@ -16,22 +16,35 @@ except ImportError:
 
 logger = logging.getLogger(__name__)
 
+# Prime Whisper with cross-lingual context to guarantee Arabic & English speech comprehension
+WHISPER_INITIAL_PROMPT = (
+    "SocialFeed voice assistant. مرحبا بكم وأهلاً وسهلاً. "
+    "Conversational bilingual English and Arabic speech transcription."
+)
+
 # Known silence/noise hallucinations produced by Whisper models
 SILENCE_HALLUCINATION_PATTERNS = [
     r"^[\s\.\,\!\?؟\-_]*$",
-    r"^(thank you|thanks for watching|subscribe to the channel|bye|goodbye|you)[\.\!\?؟\s]*$",
-    r"^(اشترك في القناة|شكرا للمشاهدة|شكراً للمشاهدة|شكرا لك|مع السلامة)[\.\!\?؟\s]*$"
+    r"^(thank you|thanks for watching|subscribe to the channel|please subscribe|bye|goodbye|you|thank you very much)[\.\!\?؟\s]*$",
+    r"^(اشترك في القناة|اشتركوا في القناة|شكرا للمشاهدة|شكراً للمشاهدة|شكرا لك|شكراً لك|مع السلامة|إلى اللقاء|سبحان الله وبحمده|لا إله إلا الله|ترجمة وتعديل|يتبع)[\.\!\?؟\s]*$"
 ]
 
 DISCARD_PHRASES = {
-    "thank you.", "thank you",
+    "thank you.", "thank you", "thank you very much", "thank you very much.",
     "thanks for watching.", "thanks for watching",
     "subscribe to the channel", "subscribe to the channel.",
-    "اشترك في القناة", "اشترك في القناة.",
-    "شكرا للمشاهدة", "شكرا للمشاهدة.",
-    "شكراً للمشاهدة", "شكراً للمشاهدة.",
+    "please subscribe", "please subscribe.",
+    "bye", "goodbye", "you",
+    "اشترك في القناة", "اشترك في القناة.", "اشتركوا في القناة",
+    "شكرا للمشاهدة", "شكرا للمشاهدة.", "شكراً للمشاهدة", "شكراً للمشاهدة.",
+    "شكرا لك", "شكراً لك", "شكرا", "شكراً",
+    "مع السلامة", "إلى اللقاء",
+    "سبحان الله وبحمده", "لا إله إلا الله",
     "."
 }
+
+def is_arabic(text: str) -> bool:
+    return bool(re.search(r"[\u0600-\u06FF]", text))
 
 def get_groq_client() -> groq.Groq:
     api_key = os.getenv("GROQ_API_KEY")
@@ -46,7 +59,8 @@ async def transcribe_voice_utterance(
 ) -> Dict[str, Any]:
     """
     Transcribes a 16kHz mono WAV audio utterance using Groq Whisper.
-    Applies strict VAD validation, hallucination filtering, and duration accounting.
+    Applies strict VAD validation, hallucination filtering, duration accounting,
+    and bilingual priming for English and Arabic.
     """
     if len(wav_bytes) < 44:
         return {
@@ -57,14 +71,14 @@ async def transcribe_voice_utterance(
             "reason": "Audio data empty or header corrupted."
         }
 
-    # ~400ms of 16kHz 16-bit mono is ~12,800 bytes. With 44-byte WAV header, ~8,000 bytes is ~250ms
-    if len(wav_bytes) < 8000:
+    # Strict VAD: 500ms of 16kHz 16-bit mono PCM is 16,000 bytes. With 44-byte WAV header: 16,044 bytes
+    if len(wav_bytes) < 16000:
         return {
             "text": "",
             "language": "en",
             "duration_seconds": 0,
             "is_valid": False,
-            "reason": "Audio duration too short (below minimum threshold)."
+            "reason": "Audio duration too short (under 500ms threshold)."
         }
 
     client = get_groq_client()
@@ -73,6 +87,7 @@ async def transcribe_voice_utterance(
         return client.audio.transcriptions.create(
             file=(filename, wav_bytes),
             model=model_name,
+            prompt=WHISPER_INITIAL_PROMPT,
             response_format="verbose_json",
             temperature=0.0
         )
@@ -139,9 +154,13 @@ async def transcribe_voice_utterance(
                     "reason": f"Filtered silence hallucination ('{clean_text}')."
                 }
 
+        # Ensure language is cleanly normalized to Arabic whenever Arabic script is present
+        is_ar_speech = is_arabic(clean_text) or str(detected_language).lower().startswith("ar")
+        final_lang = "ar" if is_ar_speech else str(detected_language).lower()
+
         return {
             "text": clean_text,
-            "language": str(detected_language).lower(),
+            "language": final_lang,
             "duration_seconds": billed_duration,
             "is_valid": True,
             "reason": "Speech detected successfully."
