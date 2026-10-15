@@ -335,11 +335,10 @@ export default function ChatAgentPage({ navigateToFeed }) {
             </button>
           )}
           <div className="chat-title-group">
-            <div className="chat-eyebrow">
-              <Sparkles size={13} className="sparkle-icon" />
-              <span>AI STUDIO CHATBOT</span>
-            </div>
-            <h1 className="chat-title">Hybrid RAG & Research Assistant</h1>
+            <h1 className="chat-main-title">
+              <Sparkles size={22} className="sparkle-icon" />
+              <span className="chat-main-title-text">AI STUDIO CHATBOT</span>
+            </h1>
           </div>
         </div>
 

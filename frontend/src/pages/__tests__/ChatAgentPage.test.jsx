@@ -23,9 +23,8 @@ describe('ChatAgentPage Component', () => {
     render(<ChatAgentPage navigateToFeed={vi.fn()} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/AI STUDIO CHATBOT/i)).toBeInTheDocument();
+      expect(screen.getByRole('heading', { level: 1, name: /AI STUDIO CHATBOT/i })).toBeInTheDocument();
     });
-    expect(screen.getByText(/Hybrid RAG & Research Assistant/i)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Auto \(Hybrid\)/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /Docs Only/i })).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /New Session/i })).toBeInTheDocument();
