@@ -137,6 +137,35 @@
   white-space: nowrap;
 }
 
+.nav-notifications-icon-container {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.navbar-unread-badge {
+  position: absolute;
+  top: -6px;
+  right: -8px;
+  background-color: #ed4956;
+  color: #ffffff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  padding: 2px 5px;
+  border-radius: 10px;
+  min-width: 14px;
+  text-align: center;
+  box-shadow: 0 0 0 2px #ffffff;
+  animation: badgePop 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes badgePop {
+  0% { transform: scale(0.5); opacity: 0; }
+  100% { transform: scale(1); opacity: 1; }
+}
+
 .logout-btn {
   display: inline-flex;
   align-items: center;

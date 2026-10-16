@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, date, timezone
-from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Integer, JSON, text
+from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Integer, JSON, Boolean, Index, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import Uuid
@@ -103,6 +103,26 @@ class SavedPost(Base):
     user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    recipient_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(32), nullable=False)  # 'comment', 'post_like', 'post_save', 'comment_like'
+    post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), nullable=True, index=True)
+    comment_id = Column(Uuid, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    extra_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    recipient = relationship("User", foreign_keys=[recipient_id])
+    actor = relationship("User", foreign_keys=[actor_id])
+    post = relationship("post", foreign_keys=[post_id])
+    comment = relationship("Comment", foreign_keys=[comment_id])
+
 
 
 class DocumentChunk(Base):

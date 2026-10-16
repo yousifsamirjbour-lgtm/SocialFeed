@@ -14,6 +14,7 @@ from backend.api.ai_studio import router as ai_studio_router
 from backend.api.chat import router as chat_router
 from backend.api.audio import router as audio_router
 from backend.api.voice import router as voice_router
+from backend.api.notifications import router as notifications_router
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await create_db_and_tables()
@@ -58,6 +59,8 @@ app.include_router(audio_router)
 app.include_router(audio_router, prefix="/api")
 app.include_router(voice_router)
 app.include_router(voice_router, prefix="/api")
+app.include_router(notifications_router)
+app.include_router(notifications_router, prefix="/api")
 
 # Static Files
 os.makedirs("uploads", exist_ok=True)

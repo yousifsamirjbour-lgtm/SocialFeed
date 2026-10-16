@@ -7,11 +7,20 @@ from fastapi.concurrency import run_in_threadpool
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
 from backend.models.db import post, User, Like, Follow, SavedPost, get_async_session
 from backend.models.schemas import postresponse
 from backend.core.users import current_active_user
 from backend.core.images import uploader
 from backend.core.services import fetch_decorated_posts
+from backend.services.notification_service import (
+    notify_post_like,
+    remove_post_like_notification,
+    notify_post_save,
+    remove_post_save_notification
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Posts"])
 
@@ -91,11 +100,19 @@ async def toggle_like(
     if existing_like:
         await session.delete(existing_like)
         await session.commit()
+        try:
+            await remove_post_like_notification(session, post_id, user.id)
+        except Exception as e:
+            logger.error(f"Failed to remove post like notification: {e}")
         return {"message": "Post unliked", "liked": False}
     else:
         new_like = Like(user_id=user.id, post_id=post_id)
         session.add(new_like)
         await session.commit()
+        try:
+            await notify_post_like(session, post_id, user.id)
+        except Exception as e:
+            logger.error(f"Failed to create post like notification: {e}")
         return {"message": "Post liked", "liked": True}
 
 @router.post("/posts/{post_id}/save")
@@ -115,11 +132,19 @@ async def toggle_save(
     if existing_save:
         await session.delete(existing_save)
         await session.commit()
+        try:
+            await remove_post_save_notification(session, post_id, user.id)
+        except Exception as e:
+            logger.error(f"Failed to remove post save notification: {e}")
         return {"message": "Post unsaved", "is_saved": False}
     else:
         new_save = SavedPost(user_id=user.id, post_id=post_id)
         session.add(new_save)
         await session.commit()
+        try:
+            await notify_post_save(session, post_id, user.id)
+        except Exception as e:
+            logger.error(f"Failed to create post save notification: {e}")
         return {"message": "Post saved", "is_saved": True}
 
 @router.get("/feed", response_model=List[postresponse])

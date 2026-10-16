@@ -16,6 +16,8 @@ import LikersModal from './components/LikersModal';
 import FollowModal from './components/FollowModal';
 import EditProfileModal from './components/EditProfileModal';
 import { isCurrentUser } from './utils/user';
+import { useNotifications } from './features/notifications/useNotifications';
+import NotificationsDropdown from './features/notifications/NotificationsDropdown';
 
 function App() {
   const [token, setToken] = useState(localStorage.getItem('token') || '');
@@ -65,6 +67,28 @@ function App() {
   const [selectedFile, setSelectedFile] = useState(null);
   const [aiStudioQuery, setAiStudioQuery] = useState('');
   const [aiStudioPostId, setAiStudioPostId] = useState(null);
+  const [showNotifications, setShowNotifications] = useState(false);
+
+  const {
+    notifications,
+    unreadCount,
+    loading: notifsLoading,
+    error: notifsError,
+    hasMore: notifsHasMore,
+    markAsRead,
+    markAllAsRead,
+    fetchNotifications
+  } = useNotifications(token);
+
+  const handleToggleNotifications = useCallback(() => {
+    setShowNotifications((prev) => {
+      const next = !prev;
+      if (next) {
+        fetchNotifications({ reset: true });
+      }
+      return next;
+    });
+  }, [fetchNotifications]);
 
   const navigateToAiStudio = useCallback((query = '', postId = null) => {
     const safeQuery = typeof query === 'string' ? query : '';
@@ -200,6 +224,62 @@ function App() {
     fetchFeed();
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
+
+  const handleNotificationNavigateToPost = useCallback(async (postId, commentId) => {
+    setShowNotifications(false);
+    if (!postId) return;
+
+    setCurrentView('feed');
+    setViewedUser(null);
+    setUserPosts([]);
+
+    const postInFeed = feed.some((p) => String(p.id) === String(postId));
+    if (!postInFeed) {
+      await fetchFeed();
+    }
+
+    if (commentId) {
+      if (!loadedComments[postId]) {
+        try {
+          const res = await fetch(`${API_BASE_URL}/posts/${postId}/comments`, {
+            headers: { Authorization: `Bearer ${token}` }
+          });
+          if (res.ok) {
+            const commentsData = await res.json();
+            setLoadedComments((prev) => ({ ...prev, [postId]: commentsData }));
+          }
+        } catch {
+          // Continue scrolling even if fetch fails
+        }
+      }
+      setShowComments((prev) => ({ ...prev, [postId]: true }));
+    }
+
+    setTimeout(() => {
+      if (commentId) {
+        const commentEl = document.getElementById(`comment-${commentId}`);
+        if (commentEl) {
+          commentEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          commentEl.style.transition = 'background-color 0.5s ease';
+          commentEl.style.backgroundColor = '#fef3c7';
+          setTimeout(() => {
+            commentEl.style.backgroundColor = 'transparent';
+          }, 2000);
+          return;
+        }
+      }
+
+      const postEl = document.getElementById(`post-${postId}`);
+      if (postEl) {
+        postEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        postEl.style.transition = 'box-shadow 0.5s ease';
+        postEl.style.boxShadow = '0 0 0 2px #3b82f6';
+        setTimeout(() => {
+          postEl.style.boxShadow = 'none';
+        }, 2000);
+      }
+    }, 150);
+  }, [feed, fetchFeed, loadedComments, token]);
 
   useEffect(() => {
     if (currentView === 'feed') {
@@ -790,6 +870,25 @@ function App() {
         setCurrentView={setCurrentView} 
         handleLogout={handleLogout} 
         currentUserName={currentUserName}
+        unreadCount={unreadCount}
+        isNotificationsOpen={showNotifications}
+        onToggleNotifications={handleToggleNotifications}
+        notificationsDropdown={
+          <NotificationsDropdown
+            isOpen={showNotifications}
+            onClose={() => setShowNotifications(false)}
+            notifications={notifications}
+            unreadCount={unreadCount}
+            loading={notifsLoading}
+            error={notifsError}
+            hasMore={notifsHasMore}
+            onMarkAsRead={markAsRead}
+            onMarkAllAsRead={markAllAsRead}
+            onNavigateToPost={handleNotificationNavigateToPost}
+            onLoadMore={() => fetchNotifications({ offset: notifications.length })}
+            onRetry={() => fetchNotifications({ reset: true })}
+          />
+        }
       />
 
       <div className="main-feed-container">

@@ -5,9 +5,18 @@ from sqlalchemy import select, func
 from sqlalchemy.orm import joinedload, selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
+import logging
 from backend.models.db import post, Comment, CommentLike, Follow, User, get_async_session
 from backend.models.schemas import CommentCreate, CommentResponse
 from backend.core.users import current_active_user
+from backend.services.notification_service import (
+    notify_post_comment,
+    remove_comment_notifications,
+    notify_comment_like,
+    remove_comment_like_notification
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Comments"])
 
@@ -36,6 +45,11 @@ async def create_comment(
     new_comment.author = user
     new_comment.likes_count = 0
     new_comment.is_liked = False
+
+    try:
+        await notify_post_comment(session, new_comment)
+    except Exception as e:
+        logger.error(f"Failed to create comment notification: {e}")
     
     return new_comment
 
@@ -103,11 +117,19 @@ async def toggle_comment_like(
         await session.delete(existing_like)
         await session.commit()
         liked = False
+        try:
+            await remove_comment_like_notification(session, comment_id, user.id)
+        except Exception as e:
+            logger.error(f"Failed to remove comment like notification: {e}")
     else:
         new_like = CommentLike(user_id=user.id, comment_id=comment_id)
         session.add(new_like)
         await session.commit()
         liked = True
+        try:
+            await notify_comment_like(session, comment_id, user.id)
+        except Exception as e:
+            logger.error(f"Failed to create comment like notification: {e}")
 
     count_query = select(func.count(CommentLike.user_id)).where(CommentLike.comment_id == comment_id)
     likes_count = (await session.execute(count_query)).scalar() or 0
@@ -141,6 +163,11 @@ async def delete_comment(
             detail="You must be the comment author or the post owner to delete this."
         )
         
+    try:
+        await remove_comment_notifications(session, comment_id)
+    except Exception as e:
+        logger.error(f"Failed to remove comment notifications on delete: {e}")
+
     await session.delete(target_comment)
     await session.commit()
     

@@ -1,4 +1,14 @@
-const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLogout, currentUserName }) => {
+const Navbar = ({
+  navigateToFeed,
+  navigateToMyProfile,
+  setCurrentView,
+  handleLogout,
+  currentUserName,
+  unreadCount = 0,
+  isNotificationsOpen = false,
+  onToggleNotifications,
+  notificationsDropdown
+}) => {
   return (
     <nav className="navbar" aria-label="Main Navigation">
       <h2 className="nav-logo" style={{ cursor: 'pointer' }} onClick={navigateToFeed}>
@@ -43,6 +53,45 @@ const Navbar = ({ navigateToFeed, navigateToMyProfile, setCurrentView, handleLog
           </svg>
           <span className="nav-btn-text">AI Chatbot</span>
         </button>
+
+        {onToggleNotifications && (
+          <div className="nav-notifications-wrapper" style={{ position: 'relative' }}>
+            <button
+              type="button"
+              onClick={onToggleNotifications}
+              className={`nav-action-btn nav-notifications-btn ${isNotificationsOpen ? 'active' : ''}`}
+              title={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
+              aria-label={unreadCount > 0 ? `Notifications (${unreadCount} unread)` : 'Notifications'}
+              aria-haspopup="dialog"
+              aria-expanded={isNotificationsOpen}
+            >
+              <div className="nav-notifications-icon-container">
+                <svg
+                  xmlns="http://www.w3.org/2000/svg"
+                  width="20"
+                  height="20"
+                  viewBox="0 0 24 24"
+                  fill={isNotificationsOpen ? 'currentColor' : 'none'}
+                  stroke="currentColor"
+                  strokeWidth="2"
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  className="nav-btn-icon"
+                >
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+                {unreadCount > 0 && (
+                  <span className="navbar-unread-badge" aria-hidden="true">
+                    {unreadCount > 99 ? '99+' : unreadCount}
+                  </span>
+                )}
+              </div>
+              <span className="nav-btn-text">Notifications</span>
+            </button>
+            {notificationsDropdown}
+          </div>
+        )}
           
         <button 
           onClick={handleLogout} 

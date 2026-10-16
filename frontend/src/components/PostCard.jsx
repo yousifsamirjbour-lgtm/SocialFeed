@@ -29,7 +29,7 @@ const PostCard = ({
   const isOwner = isCurrentUser(post.owner || post.user_id, currentUserId, email);
 
   return (
-    <div className="post-card">
+    <div className="post-card" id={`post-${post.id}`}>
        <div className="post-header post-header-row">
         <UserBadge 
           userObj={post.owner} 
@@ -143,7 +143,7 @@ const PostCard = ({
               const canDelete = isCommentAuthor || isPostOwner;
 
               return (
-                <div key={comment.id} className="comment-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
+                <div key={comment.id} id={`comment-${comment.id}`} className="comment-item" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px', marginBottom: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'baseline', gap: '8px', flex: 1, minWidth: 0 }}>
                     <UserBadge 
                       userObj={comment.author} 
