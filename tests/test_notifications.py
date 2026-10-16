@@ -239,15 +239,52 @@ async def test_stream_long_lived_and_live_push_delivery(streaming_client, test_u
 
 @pytest.mark.asyncio
 async def test_notifications_rate_limiting(client, auth_headers):
-    # Rapidly send 35 requests to /ticket (limit is 30 per minute)
+    # Rapidly send 65 requests to /ticket (limit is 60 per minute)
     statuses = []
-    for _ in range(35):
+    for _ in range(65):
         r = await client.post("/notifications/ticket", headers=auth_headers)
         statuses.append(r.status_code)
 
     assert 200 in statuses
     assert 429 in statuses
-    # Check 429 response structure
     rate_limited_idx = statuses.index(429)
     assert statuses[rate_limited_idx] == 429
+
+@pytest.mark.asyncio
+async def test_rate_limit_bounded_memory_cleanup(test_user):
+    from backend.services.notification_broker import notification_broker
+    import time
+
+    # Simulate rate limit entries
+    user_id = test_user.id
+    now = time.time()
+    notification_broker._rate_limits[(user_id, "ticket")] = [now - 200.0, now - 150.0]
+    notification_broker._rate_limits[(user_id, "notifications_list")] = [now - 130.0]
+    assert (user_id, "ticket") in notification_broker._rate_limits
+    assert (user_id, "notifications_list") in notification_broker._rate_limits
+
+    # Cleanup stale entries
+    notification_broker._cleanup_stale_rate_limits(now)
+
+    # Stale entries older than 120s must be completely purged from the dictionary
+    assert (user_id, "ticket") not in notification_broker._rate_limits
+    assert (user_id, "notifications_list") not in notification_broker._rate_limits
+
+@pytest.mark.asyncio
+async def test_stream_planned_reconnect_duration_expiry(streaming_client, test_user, auth_headers, monkeypatch):
+    import backend.api.notifications as notif_module
+
+    # Temporarily set max stream duration to 0.4s for test
+    monkeypatch.setattr(notif_module, "MAX_STREAM_DURATION", 0.4)
+
+    async with streaming_client.stream("GET", "/notifications/stream", headers=auth_headers) as res:
+        assert res.status_code == 200
+        lines = []
+        async for line in res.aiter_lines():
+            lines.append(line)
+            if "event: reconnect" in line:
+                break
+
+        # Confirm reconnect event was received before clean stream termination
+        assert any("event: reconnect" in l for l in lines)
 

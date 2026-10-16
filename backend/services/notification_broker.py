@@ -25,15 +25,32 @@ class NotificationBroker:
         self._rate_limits: Dict[Tuple[uuid.UUID, str], List[float]] = {}
         self._lock = asyncio.Lock()
 
+    def _cleanup_stale_rate_limits(self, now: Optional[float] = None):
+        """Purges rate-limit keys where all recorded timestamps are older than 120s to guarantee bounded memory."""
+        curr_time = now if now is not None else time.time()
+        cutoff = curr_time - 120.0
+        keys_to_delete = [
+            k for k, timestamps in self._rate_limits.items()
+            if not timestamps or timestamps[-1] <= cutoff
+        ]
+        for k in keys_to_delete:
+            self._rate_limits.pop(k, None)
+
     def check_rate_limit(self, user_id: uuid.UUID, action: str, max_requests: int = 60, window_seconds: float = 60.0) -> bool:
         """
         In-memory sliding window rate limiter per user and action.
+        Automatically prunes expired timestamps and stale keys to ensure bounded memory.
         Returns True if allowed, False if rate limit exceeded.
         """
         now = time.time()
+        self._cleanup_counter = getattr(self, "_cleanup_counter", 0) + 1
+        if self._cleanup_counter >= 50 or len(self._rate_limits) > 500:
+            self._cleanup_stale_rate_limits(now)
+            self._cleanup_counter = 0
+
         cutoff = now - window_seconds
         key = (user_id, action)
-        timestamps = self._rate_limits.setdefault(key, [])
+        timestamps = self._rate_limits.get(key, [])
         valid_timestamps = [t for t in timestamps if t > cutoff]
         if len(valid_timestamps) >= max_requests:
             self._rate_limits[key] = valid_timestamps

@@ -52,13 +52,15 @@ describe('useNotifications Hook', () => {
     });
 
     // Mock EventSource
-    global.EventSource = vi.fn(() => ({
-      addEventListener: vi.fn(),
-      removeEventListener: vi.fn(),
-      close: vi.fn(),
-      onopen: null,
-      onerror: null
-    }));
+    global.EventSource = vi.fn(function () {
+      return {
+        addEventListener: vi.fn(),
+        removeEventListener: vi.fn(),
+        close: vi.fn(),
+        onopen: null,
+        onerror: null
+      };
+    });
   });
 
   afterEach(() => {
@@ -193,5 +195,49 @@ describe('useNotifications Hook', () => {
 
     vi.useRealTimers();
   });
+
+  it('reconnects immediately without exponential error backoff when server sends planned reconnect event', async () => {
+    vi.useFakeTimers();
+    let reconnectHandler = null;
+    const mockClose = vi.fn();
+
+    global.EventSource = vi.fn(function () {
+      return {
+        addEventListener: vi.fn(function (event, cb) {
+          if (event === 'reconnect') reconnectHandler = cb;
+        }),
+        removeEventListener: vi.fn(),
+        close: mockClose,
+        onopen: null,
+        onerror: null
+      };
+    });
+
+    await act(async () => {
+      renderHook(() => useNotifications(fakeToken));
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(10);
+      await Promise.resolve();
+    });
+
+    expect(global.EventSource).toHaveBeenCalledTimes(1);
+    expect(reconnectHandler).toBeTypeOf('function');
+
+    // Trigger the planned reconnect event
+    await act(async () => {
+      reconnectHandler({ data: '{}' });
+      await Promise.resolve();
+      await vi.advanceTimersByTimeAsync(10);
+      await Promise.resolve();
+    });
+
+    // Old EventSource was closed
+    expect(mockClose).toHaveBeenCalled();
+    // New EventSource connected immediately without backoff delay
+    expect(global.EventSource).toHaveBeenCalledTimes(2);
+
+    vi.useRealTimers();
+  });
 });
+
 

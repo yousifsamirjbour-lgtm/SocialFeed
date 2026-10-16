@@ -74,7 +74,7 @@ async def generate_stream_ticket(
     Generates an ephemeral, single-use stream ticket for WebSocket or SSE connection
     without exposing JWT in URL parameters. Ticket expires in 30 seconds.
     """
-    if not notification_broker.check_rate_limit(user.id, "ticket", max_requests=30, window_seconds=60.0):
+    if not notification_broker.check_rate_limit(user.id, "ticket", max_requests=60, window_seconds=60.0):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many ticket requests. Please slow down.",
@@ -91,7 +91,7 @@ async def get_notifications(
     session: AsyncSession = Depends(get_async_session)
 ):
     """Fetches paginated list of notifications for current user with unread count."""
-    if not notification_broker.check_rate_limit(user.id, "notifications_list", max_requests=60, window_seconds=60.0):
+    if not notification_broker.check_rate_limit(user.id, "notifications_list", max_requests=120, window_seconds=60.0):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many notification requests. Please slow down.",
@@ -127,7 +127,7 @@ async def get_unread_count(
     session: AsyncSession = Depends(get_async_session)
 ):
     """Fast lightweight endpoint to retrieve unread notification count."""
-    if not notification_broker.check_rate_limit(user.id, "unread_count", max_requests=60, window_seconds=60.0):
+    if not notification_broker.check_rate_limit(user.id, "unread_count", max_requests=120, window_seconds=60.0):
         raise HTTPException(
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Too many unread count requests. Please slow down.",

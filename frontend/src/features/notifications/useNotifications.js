@@ -32,6 +32,8 @@ export function useNotifications(token, onNotificationReceived) {
   const isMountedRef = useRef(true);
   const broadcastChannelRef = useRef(null);
   const connectSSERef = useRef(null);
+  const isPlannedReconnectRef = useRef(false);
+  const lastFetchNotificationsTimeRef = useRef(0);
 
   // Initialize BroadcastChannel for multi-tab synchronization
   useEffect(() => {
@@ -123,6 +125,13 @@ export function useNotifications(token, onNotificationReceived) {
   const fetchNotifications = useCallback(
     async ({ reset = false, background = false, offset = 0, limit = 20 } = {}) => {
       if (!token) return;
+
+      // Deduplicate rapid repeated background fetches within 1500ms
+      const now = Date.now();
+      if (background && (now - lastFetchNotificationsTimeRef.current < 1500)) {
+        return;
+      }
+      lastFetchNotificationsTimeRef.current = now;
 
       // Only show loading indicator on user-driven initial load or manual pagination, never during background sync
       if (!background) {
@@ -420,9 +429,14 @@ export function useNotifications(token, onNotificationReceived) {
         });
 
         es.addEventListener('reconnect', () => {
-          // Clean server reconnect request
+          // Clean planned server reconnect request: reconnect immediately without error backoff
+          isPlannedReconnectRef.current = true;
           if (es) es.close();
           eventSourceRef.current = null;
+          if (healthTimerRef.current) {
+            clearTimeout(healthTimerRef.current);
+            healthTimerRef.current = null;
+          }
           if (isMountedRef.current) {
             setIsConnected(false);
             throttledBackgroundRefetch();
@@ -431,6 +445,11 @@ export function useNotifications(token, onNotificationReceived) {
         });
 
         es.onerror = () => {
+          // If this disconnect was part of a planned server reconnect, ignore error backoff
+          if (isPlannedReconnectRef.current) {
+            isPlannedReconnectRef.current = false;
+            return;
+          }
           if (es) es.close();
           eventSourceRef.current = null;
           if (healthTimerRef.current) {
