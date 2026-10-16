@@ -11,7 +11,8 @@ const ProfilePage = ({
   // PostCard Props
   loadedComments, showComments, commentInputs, setCommentInputs,
   handleDeletePost, handleLikeToggle, handleViewLikers, handleSaveToggle,
-  handleToggleComments, handleDeleteComment, handleCommentLikeToggle, handleCommentSubmit, navigateToProfile
+  handleToggleComments, handleDeleteComment, handleCommentLikeToggle, handleCommentSubmit, navigateToProfile,
+  onStartChat
 }) => {
   const isOwnProfile = isCurrentUser(viewedUser, currentUserId, email);
 
@@ -42,12 +43,25 @@ const ProfilePage = ({
         <div className="profile-title-row">
           <h2 className="profile-username"><UserName user={viewedUser} /></h2>
           {!isOwnProfile ? (
-            <button 
-              onClick={() => handleFollowToggle(viewedUser.id)}
-              className={`auth-button profile-action-btn ${viewedUser.is_following ? 'unfollow-active' : ''}`}
-            >
-              {viewedUser.is_following ? 'Unfollow' : 'Follow'}
-            </button>
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+              <button 
+                onClick={() => handleFollowToggle(viewedUser.id)}
+                className={`auth-button profile-action-btn ${viewedUser.is_following ? 'unfollow-active' : ''}`}
+              >
+                {viewedUser.is_following ? 'Unfollow' : 'Follow'}
+              </button>
+              {onStartChat && (
+                <button
+                  type="button"
+                  onClick={() => onStartChat(viewedUser)}
+                  className="auth-button profile-action-btn"
+                  style={{ background: '#efefef', color: '#262626', border: '1px solid #dbdbdb' }}
+                  title={`Message ${viewedUser.name || 'User'}`}
+                >
+                  Message
+                </button>
+              )}
+            </div>
           ) : (
             <button 
               className="auth-button profile-action-btn"

@@ -7,6 +7,7 @@ const Navbar = ({
   handleLogout,
   currentUserName,
   unreadCount = 0,
+  chatUnreadCount = 0,
   isNotificationsOpen = false,
   onToggleNotifications,
   notificationsDropdown
@@ -54,6 +55,26 @@ const Navbar = ({
             <path d="m12 3-1.912 5.813a2 2 0 0 1-1.275 1.275L3 12l5.813 1.912a2 2 0 0 1 1.275 1.275L12 21l1.912-5.813a2 2 0 0 1 1.275-1.275L21 12l-5.813-1.912a2 2 0 0 1-1.275-1.275L12 3Z"/>
           </svg>
           <span className="nav-btn-text">AI Chatbot</span>
+        </button>
+
+        <button
+          onClick={() => setCurrentView('messages')}
+          className="nav-action-btn"
+          title="Direct Messages"
+          aria-label="Direct Messages"
+        >
+          <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
+            <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="nav-btn-icon">
+              <line x1="22" y1="2" x2="11" y2="13" />
+              <polygon points="22 2 15 22 11 13 2 9 22 2" />
+            </svg>
+            {chatUnreadCount > 0 && (
+              <span className="navbar-unread-badge" aria-hidden="true">
+                {chatUnreadCount > 99 ? '99+' : chatUnreadCount}
+              </span>
+            )}
+          </div>
+          <span className="nav-btn-text">Messages</span>
         </button>
 
         {onToggleNotifications && (

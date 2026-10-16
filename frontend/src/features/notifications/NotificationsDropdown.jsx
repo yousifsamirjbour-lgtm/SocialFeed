@@ -68,6 +68,18 @@ function renderNotificationText(notif) {
         </>
       );
 
+    case 'chat_message':
+      return (
+        <>
+          <strong>{actorName}</strong> sent you a message
+          {notif.comment_text && (
+            <span className="notif-snippet">
+              : "{notif.comment_text.length > 40 ? notif.comment_text.slice(0, 40) + '...' : notif.comment_text}"
+            </span>
+          )}.
+        </>
+      );
+
     default:
       return (
         <>
@@ -104,6 +116,14 @@ function renderTypeIcon(type) {
           </svg>
         </span>
       );
+    case 'chat_message':
+      return (
+        <span className="notif-type-icon notif-icon-chat" title="Message" style={{ background: '#0095f6', color: '#fff' }}>
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="currentColor">
+            <path d="M20 2H4c-1.1 0-1.99.9-1.99 2L2 22l4-4h14c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zM6 9h12v2H6V9zm8 5H6v-2h8v2zm4-6H6V6h12v2z"/>
+          </svg>
+        </span>
+      );
     default:
       return null;
   }
@@ -114,6 +134,7 @@ const NotificationItem = memo(function NotificationItem({
   notif,
   onMarkAsRead,
   onNavigateToPost,
+  onNavigateToChat,
   isNew = false
 }) {
   const avatarSrc = getProfileImageUrl(notif.actor?.profile_picture_url);
@@ -122,26 +143,28 @@ const NotificationItem = memo(function NotificationItem({
     ? notif.post_file_type.startsWith('video')
     : Boolean(postThumbnail && /\.(mp4|webm|mov)$/i.test(postThumbnail));
 
+  const handleClick = () => {
+    if (!notif.is_read && onMarkAsRead) {
+      onMarkAsRead(notif.id);
+    }
+    if (notif.type === 'chat_message' && onNavigateToChat) {
+      const convId = notif.extra_data?.conversation_id;
+      onNavigateToChat(convId, notif.actor);
+    } else if (onNavigateToPost && notif.post_id) {
+      onNavigateToPost(notif.post_id, notif.comment_id);
+    }
+  };
+
   return (
     <div
       className={`notif-item ${!notif.is_read ? 'unread' : 'read'} ${isNew ? 'notif-item-enter' : ''}`}
       role="article"
-      onClick={() => {
-        if (!notif.is_read && onMarkAsRead) {
-          onMarkAsRead(notif.id);
-        }
-        if (onNavigateToPost && notif.post_id) {
-          onNavigateToPost(notif.post_id, notif.comment_id);
-        }
-      }}
+      onClick={handleClick}
       tabIndex={0}
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          if (!notif.is_read && onMarkAsRead) onMarkAsRead(notif.id);
-          if (onNavigateToPost && notif.post_id) {
-            onNavigateToPost(notif.post_id, notif.comment_id);
-          }
+          handleClick();
         }
       }}
     >
@@ -202,6 +225,7 @@ export const NotificationsDropdown = memo(function NotificationsDropdown({
   onMarkAsRead,
   onMarkAllAsRead,
   onNavigateToPost,
+  onNavigateToChat,
   onLoadMore,
   onRetry
 }) {
@@ -344,6 +368,7 @@ export const NotificationsDropdown = memo(function NotificationsDropdown({
                   notif={notif}
                   onMarkAsRead={onMarkAsRead}
                   onNavigateToPost={onNavigateToPost}
+                  onNavigateToChat={onNavigateToChat}
                   isNew={isNew && !isInitialMountRef.current}
                 />
               );

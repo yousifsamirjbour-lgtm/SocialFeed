@@ -69,6 +69,7 @@ async def format_notification_dict(session: AsyncSession, notification: Notifica
         "post_url": post_url,
         "post_file_type": post_file_type,
         "comment_text": comment_text,
+        "extra_data": notification.extra_data,
         "is_read": bool(notification.is_read),
         "created_at": notification.created_at.isoformat() if notification.created_at else datetime.now(timezone.utc).isoformat(),
         "updated_at": notification.updated_at.isoformat() if notification.updated_at else datetime.now(timezone.utc).isoformat()
@@ -407,3 +408,90 @@ async def remove_post_save_notification(session: AsyncSession, post_id: uuid.UUI
             "notification": payload,
             "unread_count": unread_count
         })
+
+async def notify_chat_message(
+    session: AsyncSession,
+    conversation_id: uuid.UUID,
+    sender_id: uuid.UUID,
+    recipient_id: uuid.UUID,
+    message_text: Optional[str] = None,
+    has_attachment: bool = False,
+    attachment_type: Optional[str] = None
+):
+    """Creates or updates a chat_message notification for recipient. Never notifies self."""
+    if recipient_id == sender_id:
+        return
+
+    now = datetime.now(timezone.utc)
+    preview = message_text[:100] if message_text else ("Sent an attachment" if has_attachment else "Sent a message")
+    
+    notif_q = select(Notification).where(
+        Notification.recipient_id == recipient_id,
+        Notification.type == "chat_message",
+        Notification.is_read == False
+    )
+    unreads = (await session.execute(notif_q)).scalars().all()
+    existing_notif = next(
+        (n for n in unreads if n.extra_data and isinstance(n.extra_data, dict) and n.extra_data.get("conversation_id") == str(conversation_id)),
+        None
+    )
+
+    if existing_notif:
+        existing_notif.actor_id = sender_id
+        existing_notif.updated_at = now
+        existing_notif.is_read = False
+        existing_notif.extra_data = {
+            "conversation_id": str(conversation_id),
+            "text": preview,
+            "has_attachment": has_attachment,
+            "attachment_type": attachment_type
+        }
+        target_notif = existing_notif
+    else:
+        new_notif = Notification(
+            recipient_id=recipient_id,
+            actor_id=sender_id,
+            type="chat_message",
+            is_read=False,
+            extra_data={
+                "conversation_id": str(conversation_id),
+                "text": preview,
+                "has_attachment": has_attachment,
+                "attachment_type": attachment_type
+            },
+            created_at=now,
+            updated_at=now
+        )
+        session.add(new_notif)
+        target_notif = new_notif
+
+    await session.commit()
+    await session.refresh(target_notif)
+
+    sender_obj = (await session.execute(select(User).where(User.id == sender_id))).scalar_one_or_none()
+    target_notif.actor = sender_obj
+
+    unread_count = await get_user_unread_count(session, recipient_id)
+    payload = await format_notification_dict(session, target_notif)
+    await notification_broker.broadcast(recipient_id, "new_notification", {
+        "notification": payload,
+        "unread_count": unread_count
+    })
+
+async def clear_chat_notifications(session: AsyncSession, conversation_id: uuid.UUID, user_id: uuid.UUID):
+    """Marks all chat_message notifications for this conversation as read for the user."""
+    notif_q = select(Notification).where(
+        Notification.recipient_id == user_id,
+        Notification.type == "chat_message",
+        Notification.is_read == False
+    )
+    unreads = (await session.execute(notif_q)).scalars().all()
+    matched = [n for n in unreads if n.extra_data and isinstance(n.extra_data, dict) and n.extra_data.get("conversation_id") == str(conversation_id)]
+    if not matched:
+        return
+    for n in matched:
+        n.is_read = True
+    await session.commit()
+    unread_count = await get_user_unread_count(session, user_id)
+    await notification_broker.broadcast_unread_count(user_id, unread_count)
+

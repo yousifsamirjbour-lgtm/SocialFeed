@@ -9,6 +9,7 @@ import ProfilePage from './pages/ProfilePage';
 import SearchPage from './pages/SearchPage';
 import SearchAgentPage from './pages/SearchAgentPage';
 import ChatAgentPage from './pages/ChatAgentPage';
+import DirectMessagesPage from './features/chat/DirectMessagesPage';
 
 // Import Components
 import Navbar from './components/Navbar';
@@ -68,6 +69,9 @@ function App() {
   const [aiStudioQuery, setAiStudioQuery] = useState('');
   const [aiStudioPostId, setAiStudioPostId] = useState(null);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [chatTargetUser, setChatTargetUser] = useState(null);
+  const [chatConversationId, setChatConversationId] = useState(null);
+  const [chatUnreadCount, setChatUnreadCount] = useState(0);
 
   const {
     notifications,
@@ -108,6 +112,51 @@ function App() {
     setAiStudioQuery(safeQuery);
     setAiStudioPostId(safePostId);
     setCurrentView('agent-search');
+  }, []);
+
+  const fetchChatUnreadCount = useCallback(async () => {
+    if (!token) return;
+    try {
+      const res = await fetch(`${API_BASE_URL}/conversations`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      if (res.ok) {
+        const convs = await res.json();
+        const total = convs.reduce((acc, c) => acc + (c.unread_count || 0), 0);
+        setChatUnreadCount(total);
+      }
+    } catch {
+      // Silently handle
+    }
+  }, [token]);
+
+  useEffect(() => {
+    fetchChatUnreadCount();
+  }, [fetchChatUnreadCount]);
+
+  useEffect(() => {
+    const onChatUpdate = () => fetchChatUnreadCount();
+    window.addEventListener('socialfeed:chat_message', onChatUpdate);
+    window.addEventListener('socialfeed:messages_read', onChatUpdate);
+    window.addEventListener('socialfeed:conversation_deleted', onChatUpdate);
+    return () => {
+      window.removeEventListener('socialfeed:chat_message', onChatUpdate);
+      window.removeEventListener('socialfeed:messages_read', onChatUpdate);
+      window.removeEventListener('socialfeed:conversation_deleted', onChatUpdate);
+    };
+  }, [fetchChatUnreadCount]);
+
+  const handleStartChat = useCallback((targetUser) => {
+    setChatTargetUser(targetUser);
+    setChatConversationId(null);
+    setCurrentView('messages');
+  }, []);
+
+  const handleNotificationNavigateToChat = useCallback((conversationId, actor) => {
+    setShowNotifications(false);
+    setChatConversationId(conversationId || null);
+    setChatTargetUser(actor || null);
+    setCurrentView('messages');
   }, []);
 
   const handleLogout = useCallback(() => {
@@ -883,6 +932,7 @@ function App() {
         handleLogout={handleLogout} 
         currentUserName={currentUserName}
         unreadCount={unreadCount}
+        chatUnreadCount={chatUnreadCount}
         isNotificationsOpen={showNotifications}
         onToggleNotifications={handleToggleNotifications}
         notificationsDropdown={
@@ -897,6 +947,7 @@ function App() {
             onMarkAsRead={markAsRead}
             onMarkAllAsRead={markAllAsRead}
             onNavigateToPost={handleNotificationNavigateToPost}
+            onNavigateToChat={handleNotificationNavigateToChat}
             onLoadMore={handleLoadMoreNotifications}
             onRetry={handleRetryNotifications}
           />
@@ -933,6 +984,7 @@ function App() {
             handleDeletePost={handleDeletePost} handleLikeToggle={handleLikeToggle} handleViewLikers={handleViewLikers} handleSaveToggle={handleSaveToggle}
             handleToggleComments={handleToggleComments} handleDeleteComment={handleDeleteComment} handleCommentLikeToggle={handleCommentLikeToggle} handleCommentSubmit={handleCommentSubmit}
             navigateToProfile={navigateToProfile}
+            onStartChat={handleStartChat}
           />
         )}
 
@@ -956,6 +1008,17 @@ function App() {
         {currentView === 'ai-chat' && (
           <ChatAgentPage 
             navigateToFeed={navigateToFeed}
+          />
+        )}
+
+        {currentView === 'messages' && (
+          <DirectMessagesPage
+            token={token}
+            currentUserId={currentUserId}
+            currentUserName={currentUserName}
+            initialTargetUser={chatTargetUser}
+            initialConversationId={chatConversationId}
+            onNavigateToProfile={navigateToProfile}
           />
         )}
       </div>
