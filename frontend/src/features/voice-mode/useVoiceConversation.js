@@ -35,15 +35,20 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
   }, [isMuted]);
 
   // Construct WebSocket URL
-  const getWebSocketURL = useCallback(() => {
+  const getWebSocketURL = useCallback((authToken) => {
     const isHttps = window.location.protocol === 'https:';
     const wsProto = isHttps ? 'wss:' : 'ws:';
     const host = window.location.host;
-    // Handle Vite dev server proxying or direct port 8000
-    if (window.location.port === '5173') {
-      return `${wsProto}//${window.location.hostname}:8000/api/voice/stream`;
+    let base = `${wsProto}//${host}/api/voice/stream`;
+    // On local HTTP dev server on port 5173, direct connect to port 8000
+    if (!isHttps && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5173') {
+      base = `ws://${window.location.hostname}:8000/api/voice/stream`;
     }
-    return `${wsProto}//${host}/api/voice/stream`;
+    if (authToken) {
+      const cleanToken = authToken.replace(/^Bearer\s+/i, '').trim();
+      return `${base}?token=${encodeURIComponent(cleanToken)}`;
+    }
+    return base;
   }, []);
 
   // Barge-In Interruption handler
@@ -125,18 +130,25 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
       silenceThresholdMs: 800,
       minUtteranceMs: 500,
       onSpeechStart: () => {
-        if (!isMutedRef.current) {
+        if (!isMutedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           setVoiceState('user_speaking');
         }
       },
       onBargeIn: () => {
-        if (!isMutedRef.current) {
+        if (!isMutedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           handleInterrupt();
           setVoiceState('user_speaking');
         }
       },
       onUtteranceComplete: (samples, durationMs) => {
         if (isMutedRef.current) return;
+
+        // If WebSocket is not connected and open, do not transition into thinking state
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          setVoiceState((prev) => (prev === 'user_speaking' ? 'idle' : prev));
+          if (vadRef.current) vadRef.current.reset();
+          return;
+        }
 
         setVoiceState('thinking');
         const currentTurn = turnIdRef.current;
@@ -151,16 +163,14 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
         // Encode to 16kHz mono WAV
         const wavBuffer = encodeWAV(samples, 16000);
 
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          // Send JSON header first
-          wsRef.current.send(JSON.stringify({
-            type: 'user_audio_header',
-            turn_id: currentTurn,
-            duration_ms: Math.round(durationMs)
-          }));
-          // Send raw binary frame
-          wsRef.current.send(wavBuffer);
-        }
+        // Send JSON header first
+        wsRef.current.send(JSON.stringify({
+          type: 'user_audio_header',
+          turn_id: currentTurn,
+          duration_ms: Math.round(durationMs)
+        }));
+        // Send raw binary frame
+        wsRef.current.send(wavBuffer);
       }
     });
     vadRef.current = vad;
@@ -193,20 +203,26 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
 
   // Connect WebSocket
   const connectWebSocket = useCallback(() => {
-    if (!token || !enabled) return;
+    if (!enabled) return;
+    if (!token) {
+      setConnectionStatus('error');
+      setErrorMessage('Authentication required. Please log in.');
+      return;
+    }
 
     setConnectionStatus('connecting');
     setErrorMessage('');
 
-    const wsUrl = getWebSocketURL();
+    const cleanToken = token.replace(/^Bearer\s+/i, '').trim();
+    const wsUrl = getWebSocketURL(cleanToken);
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;
 
     ws.onopen = () => {
-      // Step 1: Send JWT auth handshake
+      // Step 1: Send JWT auth handshake frame for compatibility
       ws.send(JSON.stringify({
         type: 'auth',
-        token
+        token: cleanToken
       }));
     };
 
@@ -338,14 +354,21 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
     ws.onerror = (err) => {
       console.error('Voice WebSocket connection error:', err);
       setConnectionStatus('error');
-      setErrorMessage('Could not connect to voice service.');
+      setVoiceState('idle');
+      setErrorMessage((prev) => prev || 'Could not connect to voice service.');
+      if (vadRef.current) {
+        vadRef.current.reset();
+      }
     };
 
     ws.onclose = (event) => {
       setConnectionStatus('disconnected');
       setVoiceState('idle');
+      if (vadRef.current) {
+        vadRef.current.reset();
+      }
       if (event.code === 1008) {
-        setErrorMessage(event.reason || 'Authentication failed or quota exceeded.');
+        setErrorMessage(event.reason || 'Authentication failed or session expired. Please log in again.');
       }
     };
   }, [token, enabled, getWebSocketURL]);

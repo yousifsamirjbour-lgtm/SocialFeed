@@ -52,6 +52,27 @@ def test_websocket_auth_missing_type(sync_client):
             ws.receive_text()
     assert exc.value.code == 1008
 
+def test_websocket_query_param_auth_success(sync_client, valid_token):
+    with sync_client.websocket_connect(f"/api/voice/stream?token={valid_token}") as ws:
+        res_raw = ws.receive_text()
+        data = json.loads(res_raw)
+        assert data["type"] == "auth_ok"
+        assert "session_id" in data
+        assert data["seconds_left"] > 0
+
+def test_websocket_query_param_auth_bearer_prefix_success(sync_client, valid_token):
+    with sync_client.websocket_connect(f"/api/voice/stream?token=Bearer+{valid_token}") as ws:
+        res_raw = ws.receive_text()
+        data = json.loads(res_raw)
+        assert data["type"] == "auth_ok"
+        assert "session_id" in data
+
+def test_websocket_query_param_auth_invalid_token(sync_client):
+    with pytest.raises(WebSocketDisconnect) as exc:
+        with sync_client.websocket_connect("/api/voice/stream?token=completely_invalid_jwt") as ws:
+            ws.receive_text()
+    assert exc.value.code == 1008
+
 def test_websocket_ping_pong(sync_client, valid_token):
     with sync_client.websocket_connect("/api/voice/stream") as ws:
         ws.send_text(json.dumps({"type": "auth", "token": valid_token}))
