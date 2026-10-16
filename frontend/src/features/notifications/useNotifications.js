@@ -428,6 +428,39 @@ export function useNotifications(token, onNotificationReceived) {
           }
         });
 
+        es.addEventListener('chat_message', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('socialfeed:chat_message', { detail: data }));
+            }
+          } catch {
+            // Invalid payload
+          }
+        });
+
+        es.addEventListener('messages_read', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('socialfeed:messages_read', { detail: data }));
+            }
+          } catch {
+            // Invalid payload
+          }
+        });
+
+        es.addEventListener('conversation_deleted', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            if (typeof window !== 'undefined') {
+              window.dispatchEvent(new CustomEvent('socialfeed:conversation_deleted', { detail: data }));
+            }
+          } catch {
+            // Invalid payload
+          }
+        });
+
         es.addEventListener('reconnect', () => {
           // Clean planned server reconnect request: reconnect immediately without error backoff
           isPlannedReconnectRef.current = true;
