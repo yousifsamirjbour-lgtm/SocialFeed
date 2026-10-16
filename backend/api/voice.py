@@ -6,7 +6,7 @@ import logging
 import uuid
 import re
 from typing import Optional, Dict, Any
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status, Depends
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect, status, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from backend.models.db import User, async_session_maker, SQLAlchemyUserDatabase
@@ -20,14 +20,17 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/voice", tags=["Voice Agent"])
 
-async def authenticate_websocket_token(token: str) -> Optional[User]:
+async def authenticate_websocket_token(token: Optional[str]) -> Optional[User]:
     """Validates JWT access token and returns the authenticated User record."""
+    if not token or not isinstance(token, str):
+        return None
     try:
+        clean_token = token.removeprefix("Bearer ").strip()
         strategy = get_jwt_strategy()
         async with async_session_maker() as session:
             user_db = SQLAlchemyUserDatabase(session, User)
             user_manager = UserManager(user_db)
-            user = await strategy.read_token(token, user_manager)
+            user = await strategy.read_token(clean_token, user_manager)
             if user and user.is_active:
                 return user
     except Exception as e:
@@ -180,35 +183,55 @@ async def run_voice_turn(
             pass
 
 @router.websocket("/stream")
-async def voice_stream_endpoint(websocket: WebSocket):
+async def voice_stream_endpoint(
+    websocket: WebSocket,
+    token: Optional[str] = Query(None)
+):
     """
     Real-time bidirectional WebSocket endpoint for Voice Mode.
     Protocol:
-    1. Initial handshake: Client sends {"type": "auth", "token": "<JWT>"} within 5.0 seconds.
+    1. Initial handshake: Client passes token via query parameter (?token=<JWT>)
+       OR sends in-band JSON {"type": "auth", "token": "<JWT>"} within 5.0 seconds.
     2. Server verifies token and returns {"type": "auth_ok", "session_id": "...", "seconds_left": X}.
     3. Client sends binary frames of 16kHz WAV utterances preceded by JSON header.
     4. Client can send {"type": "interrupt", "turn_id": X} to halt audio immediately.
     """
-    await websocket.accept()
     user: Optional[User] = None
     session: Optional[VoiceSession] = None
 
-    # Step 1: Handshake with 5-second timeout
-    try:
-        raw_auth = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
-        auth_data = json.loads(raw_auth)
-        if auth_data.get("type") != "auth" or not auth_data.get("token"):
-            await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing auth handshake.")
-            return
-
-        user = await authenticate_websocket_token(auth_data["token"])
+    # Step 1: Handshake Authentication
+    auth_token = token or websocket.query_params.get("token")
+    if auth_token:
+        # Browser WebSocket API limitation: Cannot send custom Authorization headers.
+        # Token is passed during the HTTP Upgrade handshake via query parameter.
+        clean_token = str(auth_token).removeprefix("Bearer ").strip()
+        user = await authenticate_websocket_token(clean_token)
         if not user:
             await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired access token.")
             return
+        await websocket.accept()
+    else:
+        # Backward-compatible fallback for in-band message handshake
+        await websocket.accept()
+        try:
+            raw_auth = await asyncio.wait_for(websocket.receive_text(), timeout=5.0)
+            auth_data = json.loads(raw_auth)
+            if auth_data.get("type") != "auth" or not auth_data.get("token"):
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing auth handshake.")
+                return
 
-    except (asyncio.TimeoutError, json.JSONDecodeError):
-        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Handshake timeout or invalid payload.")
-        return
+            msg_token = str(auth_data["token"]).removeprefix("Bearer ").strip()
+            user = await authenticate_websocket_token(msg_token)
+            if not user:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Invalid or expired access token.")
+                return
+
+        except (asyncio.TimeoutError, json.JSONDecodeError, WebSocketDisconnect):
+            try:
+                await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Handshake timeout or invalid payload.")
+            except Exception:
+                pass
+            return
 
     # Step 2: Register active session & check initial quota
     session = await voice_registry.register_session(user.id)
@@ -244,6 +267,10 @@ async def voice_stream_endpoint(websocket: WebSocket):
 
                     if msg_type == "user_audio_header":
                         session.last_audio_header = payload
+
+                    elif msg_type == "auth":
+                        # Client sent auth frame after handshake auth; acknowledge or ignore safely
+                        continue
 
                     elif msg_type == "interrupt":
                         turn_id = payload.get("turn_id")
