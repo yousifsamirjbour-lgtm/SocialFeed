@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, date, timezone
-from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Integer, JSON, text
+from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Integer, JSON, Boolean, Index, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import Uuid
@@ -75,6 +75,27 @@ class Comment(Base):
      
     author = relationship("User", foreign_keys=[user_id], back_populates="comments")
     post_parent = relationship("post", foreign_keys=[post_id], back_populates="comments") # Reverted to lowercase "post"
+    likes = relationship("CommentLike", cascade="all, delete-orphan", back_populates="comment")
+
+    @property
+    def likes_count(self) -> int:
+        if hasattr(self, "_likes_count"):
+            return self._likes_count
+        return len(self.likes) if self.likes else 0
+
+    @likes_count.setter
+    def likes_count(self, val: int):
+        self._likes_count = val
+
+class CommentLike(Base):
+    __tablename__ = "comment_likes"
+    
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    comment_id = Column(Uuid, ForeignKey("comments.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User")
+    comment = relationship("Comment", back_populates="likes")
 
 class SavedPost(Base):
     __tablename__ = "saved_posts"
@@ -82,6 +103,27 @@ class SavedPost(Base):
     user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    recipient_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    type = Column(String(32), nullable=False)  # 'comment', 'post_like', 'post_save', 'comment_like'
+    post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), nullable=True, index=True)
+    comment_id = Column(Uuid, ForeignKey("comments.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    extra_data = Column(JSON, nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    recipient = relationship("User", foreign_keys=[recipient_id])
+    actor = relationship("User", foreign_keys=[actor_id])
+    post = relationship("post", foreign_keys=[post_id])
+    comment = relationship("Comment", foreign_keys=[comment_id])
+
+
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"
@@ -122,6 +164,8 @@ engine = create_async_engine(
     echo=True,
     pool_size=10,
     max_overflow=20,
+    pool_pre_ping=True,
+    pool_recycle=300,
     connect_args=engine_connect_args
 )
 async_session_maker = async_sessionmaker(engine, expire_on_commit=False)

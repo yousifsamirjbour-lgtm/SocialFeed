@@ -1,9 +1,11 @@
 import os
 import uuid
 import tempfile
+import asyncio
 import pytest
 import pytest_asyncio
-from httpx import AsyncClient, ASGITransport
+from httpx import AsyncClient, ASGITransport, AsyncBaseTransport, Request, Response
+from httpx._types import AsyncByteStream
 from sqlalchemy.ext.asyncio import create_async_engine, async_sessionmaker, AsyncSession
 from fastapi_users_db_sqlalchemy import SQLAlchemyUserDatabase
 
@@ -79,6 +81,100 @@ async def override_dependencies(db_session, monkeypatch, tmp_path):
     async with test_engine.begin() as conn:
         for table in reversed(Base.metadata.sorted_tables):
             await conn.execute(table.delete())
+
+class StreamingASGITransport(AsyncBaseTransport):
+    """
+    An ASGI transport that supports infinite streaming responses (such as SSE),
+    yielding chunks as they arrive rather than buffering the entire response
+    before returning.
+    """
+    def __init__(self, app):
+        self.app = app
+
+    async def handle_async_request(self, request: Request) -> Response:
+        scope = {
+            "type": "http",
+            "asgi": {"version": "3.0"},
+            "http_version": "1.1",
+            "method": request.method,
+            "headers": [(k.lower(), v) for (k, v) in request.headers.raw],
+            "scheme": request.url.scheme,
+            "path": request.url.path,
+            "raw_path": request.url.raw_path.split(b"?")[0],
+            "query_string": request.url.query,
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "root_path": "",
+        }
+
+        request_body_chunks = request.stream.__aiter__()
+        request_complete = False
+        disconnect_event = asyncio.Event()
+
+        async def receive():
+            nonlocal request_complete
+            if request_complete:
+                await disconnect_event.wait()
+                return {"type": "http.disconnect"}
+            try:
+                chunk = await request_body_chunks.__anext__()
+                return {"type": "http.request", "body": chunk, "more_body": True}
+            except StopAsyncIteration:
+                request_complete = True
+                return {"type": "http.request", "body": b"", "more_body": False}
+
+        status_code = None
+        headers = None
+        started_event = asyncio.Event()
+        body_queue = asyncio.Queue()
+
+        async def send(message):
+            nonlocal status_code, headers
+            if message["type"] == "http.response.start":
+                status_code = message["status"]
+                headers = message.get("headers", [])
+                started_event.set()
+            elif message["type"] == "http.response.body":
+                body = message.get("body", b"")
+                more_body = message.get("more_body", False)
+                await body_queue.put(body)
+                if not more_body:
+                    await body_queue.put(None)
+
+        app_task = asyncio.create_task(self.app(scope, receive, send))
+
+        done, _ = await asyncio.wait(
+            [asyncio.create_task(started_event.wait()), app_task],
+            return_when=asyncio.FIRST_COMPLETED
+        )
+        if app_task in done and not started_event.is_set():
+            app_task.result()
+
+        class Stream(AsyncByteStream):
+            async def __aiter__(self):
+                while True:
+                    chunk = await body_queue.get()
+                    if chunk is None:
+                        break
+                    yield chunk
+
+            async def aclose(self):
+                disconnect_event.set()
+                app_task.cancel()
+                try:
+                    await app_task
+                except (asyncio.CancelledError, Exception):
+                    pass
+
+        return Response(status_code, headers=headers, stream=Stream())
+
+@pytest_asyncio.fixture
+async def streaming_client(db_session):
+    async with AsyncClient(
+        transport=StreamingASGITransport(app=app),
+        base_url="http://test"
+    ) as ac:
+        yield ac
 
 @pytest_asyncio.fixture
 async def client(db_session):

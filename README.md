@@ -12,12 +12,18 @@ The API is mounted at `/api` for application endpoints, including `POST /api/sea
 
 - Register and authenticate with JWT-backed sessions.
 - Publish image and video posts, comment, like, save, and delete content.
+- **Comment Likes (Feature A)**:
+  - Instagram-style heart toggle with like counts on individual comments.
+  - Safe against double taps, optimistic UI updates, and cascade deletion when comments or posts are removed.
+- **Real-Time In-App Notifications (Feature B)**:
+  - Real-time Server-Sent Events (SSE) push alerts without page refresh or third-party paid services ($0 cost).
+  - Four targeted notification types: post comments, post likes, post saves, and comment likes.
+  - Grouped notifications for multiple likers (e.g., *"Alice and 2 others liked your post"*), re-alerting when new users join.
+  - Modern top-bar bell icon with unread badge counter, desktop dropdown, and mobile full-screen panel.
+  - Unread vs read states, mark single/all as read, direct post/comment navigation, and multi-tab synchronization.
+  - Ephemeral single-use stream tickets ensuring JWTs are never exposed in SSE query parameters or URLs.
 - Follow users and browse followers, following lists, and user profiles.
-- Search users by email and view profile posts.
-- Register and authenticate with JWT-backed sessions.
-- Publish image and video posts, comment, like, save, and delete content.
-- Follow users and browse followers, following lists, and user profiles.
-- Search users by email and view profile posts.
+- Search users by name or email and view profile posts.
 - **AI Studio: Next-Gen Hybrid RAG Chatbot (Top Bar Entry)**:
   - Conversational AI assistant with dual source modes: **Auto (Hybrid)** and **Docs-Only**.
   - Document attachments support: PDF, DOCX, TXT, and MD parsed, sanitized, chunked, and indexed.
@@ -347,6 +353,70 @@ npm run test:watch
 # Run tests with coverage report
 npm run test:coverage
 ```
+
+## Real-Time Notifications & SSE Architecture
+
+Joupro includes a high-performance, zero-cost real-time in-app notification engine delivering updates via Server-Sent Events (SSE).
+
+### In-Memory Broker & Single Worker Requirement
+The real-time notification engine utilizes an asynchronous in-memory broadcast broker (`backend/services/notification_broker.py`):
+- **Worker Configuration**: Because subscriber queues reside directly in application memory, the backend deployment **must run as a single worker process** (`uvicorn --workers 1` or a single container instance).
+- **Multi-Tab Fanout**: Multiple open tabs for the same user subscribe to the broker and are synchronized seamlessly in real time without redundant API polling.
+- **Connection Lifecycle**: Enforces a per-user active stream cap (max 5 connections; oldest closed if exceeded), sends heartbeats every 15 seconds (`: ping\n\n`), sets a 15-minute max stream duration to request clean credential refresh, and closes queues immediately upon client disconnect.
+- **Zero Exposure**: Authentication utilizes single-use ephemeral tickets (`POST /api/notifications/ticket`) with a 30-second TTL, guaranteeing JWT tokens are never exposed in SSE query parameters or access logs.
+
+### Production Nginx Reverse Proxy Settings for SSE
+When deploying behind Nginx or an EC2 reverse proxy, SSE streams require specific buffering and timeout directives to prevent stream stalling or premature termination:
+
+```nginx
+# Server-Sent Events (SSE) notification streaming
+location /api/notifications/stream {
+    proxy_pass http://127.0.0.1:8000;
+    proxy_http_version 1.1;
+    
+    # Disable buffering so events stream to the browser immediately
+    proxy_buffering off;
+    proxy_cache off;
+    proxy_set_header X-Accel-Buffering no;
+    proxy_set_header Connection '';
+
+    # Extended timeouts to prevent proxy connection teardown
+    proxy_read_timeout 3600s;
+    proxy_send_timeout 3600s;
+    chunked_transfer_encoding on;
+
+    # Forward headers
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+### Database Migration & Production Deployment Instructions
+
+When deploying the Comment Likes (Feature A) and Real-Time Notifications (Feature B) features to production:
+
+1. **Apply PostgreSQL Migration (Safe & Idempotent)**:
+   The migration file `migrations/0004_create_comment_likes_and_notifications.sql` safely creates the `comment_likes` and `notifications` tables, partial unique indexes for grouping and deduplication, and foreign key cascades using `IF NOT EXISTS` guards without altering existing tables.
+   Run on the production host:
+   ```bash
+   # Using docker compose database container:
+   docker compose exec -T db psql -U postgres -d socialfeed < migrations/0004_create_comment_likes_and_notifications.sql
+
+   # Or using local psql connection string:
+   psql "$DATABASE_URL" -f migrations/0004_create_comment_likes_and_notifications.sql
+   ```
+
+2. **Reload Backend Service / Containers**:
+   Restart the backend API container to load the new `/api/notifications` routes and SSE broker:
+   ```bash
+   # Rebuild and restart API container
+   docker compose up -d --build api
+
+   # Or reload systemd uvicorn service:
+   sudo systemctl restart socialfeed-backend
+   ```
 
 ## Infrastructure & CI/CD Strategy
 

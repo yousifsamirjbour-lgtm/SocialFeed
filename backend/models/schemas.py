@@ -73,6 +73,8 @@ class CommentResponse(BaseModel):
     user_id: uuid.UUID
     post_id: uuid.UUID
     author: UserFeedInfo 
+    likes_count: int = 0
+    is_liked: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -82,3 +84,34 @@ class ProfileUpdateResponse(BaseModel):
     profile_picture_url: str | None = None
 
     model_config = ConfigDict(from_attributes=True)
+
+class NotificationActorInfo(BaseModel):
+    id: uuid.UUID
+    name: str
+    profile_picture_url: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class NotificationResponse(BaseModel):
+    id: uuid.UUID
+    type: str
+    actor: NotificationActorInfo
+    actors_count: int = 1
+    post_id: Optional[uuid.UUID] = None
+    comment_id: Optional[uuid.UUID] = None
+    post_url: Optional[str] = None
+    post_file_type: Optional[str] = None
+    comment_text: Optional[str] = None
+    is_read: bool = False
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class NotificationsListResponse(BaseModel):
+    notifications: List[NotificationResponse]
+    unread_count: int
+
+class StreamTicketResponse(BaseModel):
+    ticket: str
+    expires_in: int = 30

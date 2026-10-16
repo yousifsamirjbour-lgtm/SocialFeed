@@ -53,4 +53,23 @@ describe('Navbar Component', () => {
     fireEvent.click(screen.getByRole('button', { name: /Logout/i }));
     expect(defaultProps.handleLogout).toHaveBeenCalled();
   });
+
+  it('renders notifications button with badge and triggers onToggleNotifications', () => {
+    const onToggleNotifications = vi.fn();
+    render(
+      <Navbar
+        {...defaultProps}
+        unreadCount={5}
+        isNotificationsOpen={false}
+        onToggleNotifications={onToggleNotifications}
+      />
+    );
+
+    const notifBtn = screen.getByRole('button', { name: /Notifications/i });
+    expect(notifBtn).toBeInTheDocument();
+    expect(screen.getByText('5')).toBeInTheDocument();
+
+    fireEvent.click(notifBtn);
+    expect(onToggleNotifications).toHaveBeenCalledTimes(1);
+  });
 });
