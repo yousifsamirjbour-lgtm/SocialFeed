@@ -73,6 +73,8 @@ class CommentResponse(BaseModel):
     user_id: uuid.UUID
     post_id: uuid.UUID
     author: UserFeedInfo 
+    likes_count: int = 0
+    is_liked: bool = False
 
     model_config = ConfigDict(from_attributes=True)
 

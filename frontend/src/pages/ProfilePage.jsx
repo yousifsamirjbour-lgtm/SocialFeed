@@ -11,7 +11,7 @@ const ProfilePage = ({
   // PostCard Props
   loadedComments, showComments, commentInputs, setCommentInputs,
   handleDeletePost, handleLikeToggle, handleViewLikers, handleSaveToggle,
-  handleToggleComments, handleDeleteComment, handleCommentSubmit, navigateToProfile
+  handleToggleComments, handleDeleteComment, handleCommentLikeToggle, handleCommentSubmit, navigateToProfile
 }) => {
   const isOwnProfile = isCurrentUser(viewedUser, currentUserId, email);
 
@@ -24,6 +24,7 @@ const ProfilePage = ({
       handleDeletePost={handleDeletePost} handleLikeToggle={handleLikeToggle}
       handleViewLikers={handleViewLikers} handleSaveToggle={handleSaveToggle}
       handleToggleComments={handleToggleComments} handleDeleteComment={handleDeleteComment}
+      handleCommentLikeToggle={handleCommentLikeToggle}
       handleCommentSubmit={handleCommentSubmit} navigateToProfile={navigateToProfile}
       handleFollowToggle={handleFollowToggle}
     />

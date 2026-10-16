@@ -75,6 +75,27 @@ class Comment(Base):
      
     author = relationship("User", foreign_keys=[user_id], back_populates="comments")
     post_parent = relationship("post", foreign_keys=[post_id], back_populates="comments") # Reverted to lowercase "post"
+    likes = relationship("CommentLike", cascade="all, delete-orphan", back_populates="comment")
+
+    @property
+    def likes_count(self) -> int:
+        if hasattr(self, "_likes_count"):
+            return self._likes_count
+        return len(self.likes) if self.likes else 0
+
+    @likes_count.setter
+    def likes_count(self, val: int):
+        self._likes_count = val
+
+class CommentLike(Base):
+    __tablename__ = "comment_likes"
+    
+    user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    comment_id = Column(Uuid, ForeignKey("comments.id", ondelete="CASCADE"), primary_key=True, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
+    user = relationship("User")
+    comment = relationship("Comment", back_populates="likes")
 
 class SavedPost(Base):
     __tablename__ = "saved_posts"
@@ -82,6 +103,7 @@ class SavedPost(Base):
     user_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     post_id = Column(Uuid, ForeignKey("posts.id", ondelete="CASCADE"), primary_key=True)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+
 
 class DocumentChunk(Base):
     __tablename__ = "document_chunks"

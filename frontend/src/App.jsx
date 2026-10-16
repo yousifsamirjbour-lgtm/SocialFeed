@@ -572,6 +572,58 @@ function App() {
     }
   };
 
+  const handleCommentLikeToggle = async (postId, commentId) => {
+    const prevComments = loadedComments[postId] || [];
+    const targetComment = prevComments.find(c => String(c.id) === String(commentId));
+    if (!targetComment) return;
+
+    const wasLiked = Boolean(targetComment.is_liked);
+    const prevCount = Number(targetComment.likes_count || 0);
+    const newLikesCount = wasLiked ? Math.max(0, prevCount - 1) : prevCount + 1;
+
+    setLoadedComments(prev => ({
+      ...prev,
+      [postId]: (prev[postId] || []).map(c => {
+        if (String(c.id) === String(commentId)) {
+          return {
+            ...c,
+            is_liked: !wasLiked,
+            likes_count: newLikesCount
+          };
+        }
+        return c;
+      })
+    }));
+
+    try {
+      const response = await fetch(`${API_BASE_URL}/comments/${commentId}/like`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` }
+      });
+      if (!response.ok) throw new Error('Failed to toggle comment like');
+      const data = await response.json();
+      setLoadedComments(prev => ({
+        ...prev,
+        [postId]: (prev[postId] || []).map(c => {
+          if (String(c.id) === String(commentId)) {
+            return {
+              ...c,
+              is_liked: data.liked,
+              likes_count: data.likes_count
+            };
+          }
+          return c;
+        })
+      }));
+    } catch (err) {
+      console.error("Comment like toggle failed:", err);
+      setLoadedComments(prev => ({
+        ...prev,
+        [postId]: prevComments
+      }));
+    }
+  };
+
   const handleViewLikers = async (postId) => {
     try {
       const response = await fetch(`${API_BASE_URL}/posts/${postId}/likes`, {
@@ -754,7 +806,7 @@ function App() {
             uploading={uploading} setUploading={setUploading} email={email} currentUserId={currentUserId} loadedComments={loadedComments} showComments={showComments}
             commentInputs={commentInputs} setCommentInputs={setCommentInputs} handleDeletePost={handleDeletePost} handleLikeToggle={handleLikeToggle}
             handleViewLikers={handleViewLikers} handleSaveToggle={handleSaveToggle} handleToggleComments={handleToggleComments}
-            handleDeleteComment={handleDeleteComment} handleCommentSubmit={handleCommentSubmit} navigateToProfile={navigateToProfile}
+            handleDeleteComment={handleDeleteComment} handleCommentLikeToggle={handleCommentLikeToggle} handleCommentSubmit={handleCommentSubmit} navigateToProfile={navigateToProfile}
             handleFollowToggle={handleFollowToggle}
             navigateToAiStudio={navigateToAiStudio}
             onAnalyzePost={(p) => navigateToAiStudio(p.caption, p.id)}
@@ -768,7 +820,7 @@ function App() {
             profileTab={profileTab} setProfileTab={setProfileTab} fetchSavedPosts={fetchSavedPosts} savedPosts={savedPosts} likedPosts={likedPosts}
             loadedComments={loadedComments} showComments={showComments} commentInputs={commentInputs} setCommentInputs={setCommentInputs}
             handleDeletePost={handleDeletePost} handleLikeToggle={handleLikeToggle} handleViewLikers={handleViewLikers} handleSaveToggle={handleSaveToggle}
-            handleToggleComments={handleToggleComments} handleDeleteComment={handleDeleteComment} handleCommentSubmit={handleCommentSubmit}
+            handleToggleComments={handleToggleComments} handleDeleteComment={handleDeleteComment} handleCommentLikeToggle={handleCommentLikeToggle} handleCommentSubmit={handleCommentSubmit}
             navigateToProfile={navigateToProfile}
           />
         )}

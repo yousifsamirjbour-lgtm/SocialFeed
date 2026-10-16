@@ -188,6 +188,57 @@ describe('PostCard Component', () => {
     expect(onAnalyzePost).toHaveBeenCalledTimes(1);
     expect(onAnalyzePost).toHaveBeenCalledWith(basePost);
   });
+
+  it('renders comment heart button, displays like count, and calls handleCommentLikeToggle on click', () => {
+    const handleCommentLikeToggle = vi.fn();
+    const postWithComments = { ...basePost, id: 'post-100' };
+    const loadedComments = {
+      'post-100': [
+        {
+          id: 'comment-1',
+          text: 'Great photo!',
+          user_id: 'user-2',
+          author: { id: 'user-2', name: 'Commenter User' },
+          likes_count: 3,
+          is_liked: true
+        },
+        {
+          id: 'comment-2',
+          text: 'Awesome caption',
+          user_id: 'user-3',
+          author: { id: 'user-3', name: 'Other User' },
+          likes_count: 0,
+          is_liked: false
+        }
+      ]
+    };
+    const showComments = { 'post-100': true };
+
+    render(
+      <PostCard
+        {...defaultProps}
+        post={postWithComments}
+        loadedComments={loadedComments}
+        showComments={showComments}
+        handleCommentLikeToggle={handleCommentLikeToggle}
+      />
+    );
+
+    // Displays like count 3 for comment-1
+    expect(screen.getByText('3')).toBeInTheDocument();
+
+    // Unlike comment-1 (currently liked)
+    const unlikeBtn = screen.getByRole('button', { name: 'Unlike comment' });
+    expect(unlikeBtn).toHaveClass('liked');
+    fireEvent.click(unlikeBtn);
+    expect(handleCommentLikeToggle).toHaveBeenCalledWith('post-100', 'comment-1');
+
+    // Like comment-2 (currently unliked)
+    const likeBtn = screen.getByRole('button', { name: 'Like comment' });
+    expect(likeBtn).not.toHaveClass('liked');
+    fireEvent.click(likeBtn);
+    expect(handleCommentLikeToggle).toHaveBeenCalledWith('post-100', 'comment-2');
+  });
 });
 
 
