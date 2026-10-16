@@ -393,6 +393,31 @@ location /api/notifications/stream {
 }
 ```
 
+### Database Migration & Production Deployment Instructions
+
+When deploying the Comment Likes (Feature A) and Real-Time Notifications (Feature B) features to production:
+
+1. **Apply PostgreSQL Migration (Safe & Idempotent)**:
+   The migration file `migrations/0004_create_comment_likes_and_notifications.sql` safely creates the `comment_likes` and `notifications` tables, partial unique indexes for grouping and deduplication, and foreign key cascades using `IF NOT EXISTS` guards without altering existing tables.
+   Run on the production host:
+   ```bash
+   # Using docker compose database container:
+   docker compose exec -T db psql -U postgres -d socialfeed < migrations/0004_create_comment_likes_and_notifications.sql
+
+   # Or using local psql connection string:
+   psql "$DATABASE_URL" -f migrations/0004_create_comment_likes_and_notifications.sql
+   ```
+
+2. **Reload Backend Service / Containers**:
+   Restart the backend API container to load the new `/api/notifications` routes and SSE broker:
+   ```bash
+   # Rebuild and restart API container
+   docker compose up -d --build api
+
+   # Or reload systemd uvicorn service:
+   sudo systemctl restart socialfeed-backend
+   ```
+
 ## Infrastructure & CI/CD Strategy
 
 ### Terraform
