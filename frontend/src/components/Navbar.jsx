@@ -1,3 +1,5 @@
+import { memo } from 'react';
+
 const Navbar = ({
   navigateToFeed,
   navigateToMyProfile,
@@ -111,4 +113,4 @@ const Navbar = ({
   );
 };
 
-export default Navbar;
+export default memo(Navbar);

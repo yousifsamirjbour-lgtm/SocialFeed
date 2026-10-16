@@ -1,8 +1,14 @@
 import uuid
 import json
+import asyncio
 import pytest
 from httpx import AsyncClient
 from backend.models.db import post, Comment, Like, SavedPost, CommentLike, Notification
+import backend.api.notifications as notifications_api
+
+@pytest.fixture(autouse=True)
+def fast_sse_heartbeat(monkeypatch):
+    monkeypatch.setattr(notifications_api, "HEARTBEAT_INTERVAL", 0.1)
 
 @pytest.mark.asyncio
 async def test_post_comment_creates_notification(client, sample_post, test_user, test_user_2, auth_headers_2, auth_headers):
@@ -156,15 +162,15 @@ async def test_mark_all_read(client, sample_post, auth_headers, auth_headers_2):
     assert unread_res.json()["unread_count"] == 0
 
 @pytest.mark.asyncio
-async def test_stream_ticket_and_auth_security(client, auth_headers):
+async def test_stream_ticket_and_auth_security(streaming_client, test_user, auth_headers):
     # 1. Generate single-use ticket
-    ticket_res = await client.post("/notifications/ticket", headers=auth_headers)
+    ticket_res = await streaming_client.post("/notifications/ticket", headers=auth_headers)
     assert ticket_res.status_code == 200
     ticket = ticket_res.json()["ticket"]
     assert len(ticket) >= 32
 
     # 2. Consume ticket via stream
-    async with client.stream("GET", f"/notifications/stream?ticket={ticket}") as res:
+    async with streaming_client.stream("GET", f"/notifications/stream?ticket={ticket}") as res:
         assert res.status_code == 200
         assert "text/event-stream" in res.headers["content-type"]
         assert res.headers.get("x-accel-buffering") == "no"
@@ -173,16 +179,75 @@ async def test_stream_ticket_and_auth_security(client, auth_headers):
                 break
 
     # 3. Ticket is single-use: consuming again must return 401
-    reuse_res = await client.get(f"/notifications/stream?ticket={ticket}")
+    reuse_res = await streaming_client.get(f"/notifications/stream?ticket={ticket}")
     assert reuse_res.status_code == 401
 
 @pytest.mark.asyncio
-async def test_stream_with_bearer_authorization_header(client, auth_headers):
+async def test_stream_with_bearer_authorization_header(streaming_client, test_user, auth_headers):
     # Fetch-based SSE reader with Authorization header
-    async with client.stream("GET", "/notifications/stream", headers=auth_headers) as res:
+    async with streaming_client.stream("GET", "/notifications/stream", headers=auth_headers) as res:
         assert res.status_code == 200
         assert "text/event-stream" in res.headers["content-type"]
         assert res.headers.get("x-accel-buffering") == "no"
         async for line in res.aiter_lines():
             if "status" in line or "connected" in line:
                 break
+
+@pytest.mark.asyncio
+async def test_stream_long_lived_and_live_push_delivery(streaming_client, test_user, auth_headers):
+    from backend.services.notification_broker import notification_broker
+
+    initial_queues_count = len(notification_broker._connections.get(test_user.id, []))
+
+    async with streaming_client.stream("GET", "/notifications/stream", headers=auth_headers) as res:
+        assert res.status_code == 200
+        # Stream registered in broker
+        assert len(notification_broker._connections[test_user.id]) == initial_queues_count + 1
+
+        line_iter = res.aiter_lines()
+        # Receive initial event
+        async for line in line_iter:
+            if "connected" in line:
+                break
+
+        # Broadcast live notification while client is listening
+        test_notif_payload = {
+            "id": str(uuid.uuid4()),
+            "type": "post_like",
+            "actor": {"id": str(uuid.uuid4()), "name": "Live Actor", "profile_picture_url": None},
+            "unread_count": 5
+        }
+        await notification_broker.broadcast(test_user.id, "notification", test_notif_payload)
+
+        # Confirm live event arrives over the open stream
+        received_event = None
+        received_data = None
+        async for line in line_iter:
+            if line.startswith("event: notification"):
+                received_event = "notification"
+            elif line.startswith("data:") and "Live Actor" in line:
+                received_data = json.loads(line[5:].strip())
+                break
+
+        assert received_event == "notification"
+        assert received_data["actor"]["name"] == "Live Actor"
+        assert received_data["unread_count"] == 5
+
+    # After exiting async with, client disconnected: broker must unregister connection cleanly
+    await asyncio.sleep(0.05)
+    assert len(notification_broker._connections.get(test_user.id, [])) == initial_queues_count
+
+@pytest.mark.asyncio
+async def test_notifications_rate_limiting(client, auth_headers):
+    # Rapidly send 35 requests to /ticket (limit is 30 per minute)
+    statuses = []
+    for _ in range(35):
+        r = await client.post("/notifications/ticket", headers=auth_headers)
+        statuses.append(r.status_code)
+
+    assert 200 in statuses
+    assert 429 in statuses
+    # Check 429 response structure
+    rate_limited_idx = statuses.index(429)
+    assert statuses[rate_limited_idx] == 429
+

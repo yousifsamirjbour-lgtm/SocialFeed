@@ -141,6 +141,21 @@
   background-color: #e5f1ff;
 }
 
+.notif-item.notif-item-enter {
+  animation: notifItemFadeIn 0.25s ease-out;
+}
+
+@keyframes notifItemFadeIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 /* Avatar & Icon wrapper */
 .notif-avatar-wrapper {
   position: relative;

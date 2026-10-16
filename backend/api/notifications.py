@@ -74,6 +74,12 @@ async def generate_stream_ticket(
     Generates an ephemeral, single-use stream ticket for WebSocket or SSE connection
     without exposing JWT in URL parameters. Ticket expires in 30 seconds.
     """
+    if not notification_broker.check_rate_limit(user.id, "ticket", max_requests=30, window_seconds=60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many ticket requests. Please slow down.",
+            headers={"Retry-After": "15"}
+        )
     ticket = notification_broker.create_ticket(user.id)
     return {"ticket": ticket, "expires_in": int(notification_broker.TICKET_TTL_SECONDS)}
 
@@ -85,6 +91,12 @@ async def get_notifications(
     session: AsyncSession = Depends(get_async_session)
 ):
     """Fetches paginated list of notifications for current user with unread count."""
+    if not notification_broker.check_rate_limit(user.id, "notifications_list", max_requests=60, window_seconds=60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many notification requests. Please slow down.",
+            headers={"Retry-After": "15"}
+        )
     query = select(Notification).where(
         Notification.recipient_id == user.id
     ).options(
@@ -115,6 +127,12 @@ async def get_unread_count(
     session: AsyncSession = Depends(get_async_session)
 ):
     """Fast lightweight endpoint to retrieve unread notification count."""
+    if not notification_broker.check_rate_limit(user.id, "unread_count", max_requests=60, window_seconds=60.0):
+        raise HTTPException(
+            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
+            detail="Too many unread count requests. Please slow down.",
+            headers={"Retry-After": "15"}
+        )
     count = await get_user_unread_count(session, user.id)
     return {"unread_count": count}
 
@@ -159,6 +177,10 @@ async def mark_all_read(
     await notification_broker.broadcast_unread_count(user.id, 0)
     return {"message": "All notifications marked as read", "unread_count": 0}
 
+# SSE stream configuration
+HEARTBEAT_INTERVAL: float = 15.0  # seconds
+MAX_STREAM_DURATION: float = 900.0  # 15 minutes
+
 @router.get("/stream")
 async def stream_notifications(
     request: Request,
@@ -172,12 +194,9 @@ async def stream_notifications(
     - Set X-Accel-Buffering: no for proxy buffering avoidance.
     """
     queue = await notification_broker.register_connection(user.id)
-    HEARTBEAT_INTERVAL = 15.0  # seconds
-    MAX_STREAM_DURATION = 900.0  # 15 minutes
 
     async def event_generator():
         start_time = asyncio.get_event_loop().time()
-        disconnect_task = asyncio.create_task(request.is_disconnected())
         try:
             # Send initial connection event with current unread count
             async with async_session_maker() as session:
@@ -187,44 +206,30 @@ async def stream_notifications(
             yield f"event: connected\ndata: {initial_data}\n\n"
 
             while True:
-                if disconnect_task.done() and disconnect_task.result():
-                    break
-
-                # Check stream duration limit
+                # Check stream duration limit (15 minutes)
                 now = asyncio.get_event_loop().time()
                 if (now - start_time) >= MAX_STREAM_DURATION:
                     yield "event: reconnect\ndata: {}\n\n"
                     break
 
-                get_task = asyncio.create_task(queue.get())
-                done, _ = await asyncio.wait(
-                    [get_task, disconnect_task],
-                    timeout=HEARTBEAT_INTERVAL,
-                    return_when=asyncio.FIRST_COMPLETED
-                )
-
-                if disconnect_task in done:
-                    get_task.cancel()
-                    break
-
-                if get_task in done:
-                    item = get_task.result()
+                try:
+                    # Wait for next event from broker queue with 15s timeout
+                    item = await asyncio.wait_for(queue.get(), timeout=HEARTBEAT_INTERVAL)
                     event_type = item.get("event", "message")
                     data_str = json.dumps(item.get("data", {}))
                     yield f"event: {event_type}\ndata: {data_str}\n\n"
 
                     if event_type == "close":
                         break
-                else:
-                    # Heartbeat interval elapsed
-                    get_task.cancel()
+                except asyncio.TimeoutError:
+                    # Heartbeat interval elapsed: check client disconnect status
+                    if await request.is_disconnected():
+                        break
                     yield ": ping\n\n"
 
         except asyncio.CancelledError:
             pass
         finally:
-            if not disconnect_task.done():
-                disconnect_task.cancel()
             await notification_broker.unregister_connection(user.id, queue)
 
     return StreamingResponse(

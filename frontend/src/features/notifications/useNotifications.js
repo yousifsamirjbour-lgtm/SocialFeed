@@ -25,6 +25,10 @@ export function useNotifications(token, onNotificationReceived) {
   const eventSourceRef = useRef(null);
   const reconnectTimeoutRef = useRef(null);
   const reconnectAttemptsRef = useRef(0);
+  const healthTimerRef = useRef(null);
+  const wasHealthyRef = useRef(false);
+  const lastRefetchTimeRef = useRef(0);
+  const isConnectingRef = useRef(false);
   const isMountedRef = useRef(true);
   const broadcastChannelRef = useRef(null);
   const connectSSERef = useRef(null);
@@ -105,8 +109,9 @@ export function useNotifications(token, onNotificationReceived) {
       if (res.ok) {
         const data = await res.json();
         if (isMountedRef.current) {
-          setUnreadCount(data.unread_count ?? 0);
-          broadcast('UNREAD_COUNT', { count: data.unread_count ?? 0 });
+          const count = data.unread_count ?? 0;
+          setUnreadCount((prev) => (prev === count ? prev : count));
+          broadcast('UNREAD_COUNT', { count });
         }
       }
     } catch {
@@ -114,12 +119,17 @@ export function useNotifications(token, onNotificationReceived) {
     }
   }, [token]);
 
-  // Fetch notifications list
+  // Fetch notifications list with invisible background sync & reference preservation
   const fetchNotifications = useCallback(
-    async ({ reset = false, offset = 0, limit = 20 } = {}) => {
+    async ({ reset = false, background = false, offset = 0, limit = 20 } = {}) => {
       if (!token) return;
-      setLoading(true);
-      setError(null);
+
+      // Only show loading indicator on user-driven initial load or manual pagination, never during background sync
+      if (!background) {
+        setLoading(true);
+        setError(null);
+      }
+
       try {
         const currentOffset = reset ? 0 : offset;
         const res = await fetch(
@@ -130,31 +140,71 @@ export function useNotifications(token, onNotificationReceived) {
         );
         if (!res.ok) throw new Error('Failed to load notifications');
         const data = await res.json();
+        const incoming = data.notifications || [];
+
         if (isMountedRef.current) {
           if (reset) {
-            setNotifications(data.notifications || []);
+            setNotifications((prev) => {
+              const prevMap = new Map(prev.map((n) => [n.id, n]));
+              let hasChanges = prev.length !== incoming.length;
+
+              const merged = incoming.map((item) => {
+                const existing = prevMap.get(item.id);
+                if (
+                  existing &&
+                  existing.updated_at === item.updated_at &&
+                  existing.is_read === item.is_read &&
+                  existing.actors_count === item.actors_count &&
+                  existing.actor?.id === item.actor?.id &&
+                  existing.comment_text === item.comment_text &&
+                  existing.post_media_url === item.post_media_url
+                ) {
+                  return existing; // Preserve object reference!
+                }
+                hasChanges = true;
+                return item;
+              });
+
+              if (!hasChanges) {
+                return prev; // Preserve array reference!
+              }
+              return merged;
+            });
           } else {
             setNotifications((prev) => {
               const existingIds = new Set(prev.map((n) => n.id));
-              const fresh = (data.notifications || []).filter((n) => !existingIds.has(n.id));
+              const fresh = incoming.filter((n) => !existingIds.has(n.id));
+              if (fresh.length === 0) return prev;
               return [...prev, ...fresh];
             });
           }
-          setUnreadCount(data.unread_count ?? 0);
-          setHasMore((data.notifications || []).length === limit);
+
+          setUnreadCount((prev) => (prev === data.unread_count ? prev : (data.unread_count ?? 0)));
+          setHasMore(incoming.length === limit);
         }
       } catch (err) {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && !background) {
           setError(err.message || 'Error loading notifications');
         }
       } finally {
-        if (isMountedRef.current) {
+        if (isMountedRef.current && !background) {
           setLoading(false);
         }
       }
     },
     [token]
   );
+
+  // Throttled background refetch helper (never more than once every ~30s)
+  const throttledBackgroundRefetch = useCallback(() => {
+    const now = Date.now();
+    if (now - lastRefetchTimeRef.current < 30000) {
+      return;
+    }
+    lastRefetchTimeRef.current = now;
+    void fetchUnreadCount();
+    void fetchNotifications({ reset: true, background: true });
+  }, [fetchUnreadCount, fetchNotifications]);
 
   // Mark single notification as read
   const markAsRead = useCallback(
@@ -211,25 +261,68 @@ export function useNotifications(token, onNotificationReceived) {
     }
   }, [token]);
 
-  // Connect SSE with short-lived ticket
+  // Exponential backoff scheduler with jitter & rate-limiting protection
+  const scheduleReconnect = useCallback(
+    (rateLimitedRetryAfter = null) => {
+      if (!token || !isMountedRef.current) return;
+      if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
+
+      let delay;
+      if (rateLimitedRetryAfter) {
+        delay = Math.max(15000, rateLimitedRetryAfter * 1000);
+      } else {
+        // Exponential backoff with jitter, starting at ~1s and capped at ~30-60s
+        const attempt = reconnectAttemptsRef.current;
+        const jitter = Math.random() * 800;
+        delay = Math.min(60000, 1000 * Math.pow(1.5, attempt) + jitter);
+        reconnectAttemptsRef.current += 1;
+      }
+
+      reconnectTimeoutRef.current = setTimeout(() => {
+        if (!isMountedRef.current) return;
+        // Only refetch unread/list after reconnecting following a connection that had stayed healthy
+        if (wasHealthyRef.current) {
+          wasHealthyRef.current = false;
+          throttledBackgroundRefetch();
+        }
+        connectSSERef.current?.();
+      }, delay);
+    },
+    [token, throttledBackgroundRefetch]
+  );
+
+  // Connect SSE with short-lived ticket and single-stream per tab enforcement
   const connectSSE = useCallback(() => {
     if (!token || !isMountedRef.current) return;
+    if (isConnectingRef.current) return;
 
+    // Single active stream per tab: close existing before connecting
     if (eventSourceRef.current) {
       eventSourceRef.current.close();
       eventSourceRef.current = null;
     }
+    if (healthTimerRef.current) {
+      clearTimeout(healthTimerRef.current);
+      healthTimerRef.current = null;
+    }
 
-    // Step 1: Request ephemeral single-use ticket (no tokens logged or in URL)
+    isConnectingRef.current = true;
+
+    // Request ephemeral single-use ticket
     fetch(`${API_BASE_URL}/notifications/ticket`, {
       method: 'POST',
       headers: { Authorization: `Bearer ${token}` }
     })
-      .then((res) => {
+      .then(async (res) => {
+        if (res.status === 429) {
+          const retryAfter = parseInt(res.headers.get('Retry-After') || '15', 10);
+          throw { is429: true, retryAfter };
+        }
         if (!res.ok) throw new Error('Ticket generation failed');
         return res.json();
       })
       .then((ticketData) => {
+        isConnectingRef.current = false;
         if (!isMountedRef.current || !ticketData.ticket) return;
 
         const ticket = ticketData.ticket;
@@ -240,7 +333,14 @@ export function useNotifications(token, onNotificationReceived) {
         es.onopen = () => {
           if (isMountedRef.current) {
             setIsConnected(true);
-            reconnectAttemptsRef.current = 0;
+            // Reset backoff ONLY after connection has stayed healthy for >= 10s
+            if (healthTimerRef.current) clearTimeout(healthTimerRef.current);
+            healthTimerRef.current = setTimeout(() => {
+              if (isMountedRef.current) {
+                reconnectAttemptsRef.current = 0;
+                wasHealthyRef.current = true;
+              }
+            }, 10000);
           }
         };
 
@@ -248,7 +348,7 @@ export function useNotifications(token, onNotificationReceived) {
           try {
             const data = JSON.parse(event.data);
             if (typeof data.unread_count === 'number' && isMountedRef.current) {
-              setUnreadCount(data.unread_count);
+              setUnreadCount((prev) => (prev === data.unread_count ? prev : data.unread_count));
             }
           } catch {
             // Invalid payload
@@ -267,30 +367,51 @@ export function useNotifications(token, onNotificationReceived) {
           }
         });
 
-        es.addEventListener('notification', (event) => {
+        const handleIncomingNotification = (event) => {
           try {
-            const newNotif = JSON.parse(event.data);
-            if (isMountedRef.current) {
+            const raw = JSON.parse(event.data);
+            const notifItem = raw.notification || raw;
+            const unread = typeof raw.unread_count === 'number' ? raw.unread_count : notifItem.unread_count;
+
+            if (isMountedRef.current && notifItem && notifItem.id) {
               setNotifications((prev) => {
-                const idx = prev.findIndex((n) => n.id === newNotif.id);
+                const idx = prev.findIndex((n) => n.id === notifItem.id);
                 if (idx >= 0) {
                   const updated = [...prev];
-                  updated[idx] = newNotif;
+                  updated[idx] = notifItem;
                   return updated;
                 }
-                return [newNotif, ...prev];
+                return [notifItem, ...prev];
               });
 
-              if (typeof newNotif.unread_count === 'number') {
-                setUnreadCount(newNotif.unread_count);
+              if (typeof unread === 'number') {
+                setUnreadCount(unread);
               } else {
                 setUnreadCount((prev) => prev + 1);
               }
 
-              broadcast('NEW_NOTIFICATION', newNotif);
+              broadcast('NEW_NOTIFICATION', notifItem);
 
               if (typeof onNotificationReceived === 'function') {
-                onNotificationReceived(newNotif);
+                onNotificationReceived(notifItem);
+              }
+            }
+          } catch {
+            // Invalid payload
+          }
+        };
+
+        es.addEventListener('notification', handleIncomingNotification);
+        es.addEventListener('new_notification', handleIncomingNotification);
+
+        es.addEventListener('notification_removed', (event) => {
+          try {
+            const data = JSON.parse(event.data);
+            const removedId = data.notification_id || data.id;
+            if (isMountedRef.current && removedId) {
+              setNotifications((prev) => prev.filter((n) => n.id !== removedId));
+              if (typeof data.unread_count === 'number') {
+                setUnreadCount(data.unread_count);
               }
             }
           } catch {
@@ -299,48 +420,37 @@ export function useNotifications(token, onNotificationReceived) {
         });
 
         es.addEventListener('reconnect', () => {
-          // Clean reconnect request from server
+          // Clean server reconnect request
           if (es) es.close();
+          eventSourceRef.current = null;
           if (isMountedRef.current) {
             setIsConnected(false);
-            // Refetch unread count and latest notifications after reconnect as required
-            void fetchUnreadCount();
-            void fetchNotifications({ reset: true });
+            throttledBackgroundRefetch();
             connectSSERef.current?.();
           }
         });
 
         es.onerror = () => {
           if (es) es.close();
+          eventSourceRef.current = null;
+          if (healthTimerRef.current) {
+            clearTimeout(healthTimerRef.current);
+            healthTimerRef.current = null;
+          }
           if (isMountedRef.current) {
             setIsConnected(false);
-            const backoff = Math.min(15000, 1000 * Math.pow(2, reconnectAttemptsRef.current));
-            reconnectAttemptsRef.current += 1;
-            if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-            reconnectTimeoutRef.current = setTimeout(() => {
-              if (isMountedRef.current) {
-                // Reconnect & refetch unread count and notifications
-                void fetchUnreadCount();
-                void fetchNotifications({ reset: true });
-                connectSSERef.current?.();
-              }
-            }, backoff);
+            scheduleReconnect();
           }
         };
       })
-      .catch(() => {
-        // Ticket request failed; retry with backoff
+      .catch((err) => {
+        isConnectingRef.current = false;
         if (isMountedRef.current) {
           setIsConnected(false);
-          const backoff = Math.min(15000, 1000 * Math.pow(2, reconnectAttemptsRef.current));
-          reconnectAttemptsRef.current += 1;
-          if (reconnectTimeoutRef.current) clearTimeout(reconnectTimeoutRef.current);
-          reconnectTimeoutRef.current = setTimeout(() => {
-            if (isMountedRef.current) connectSSERef.current?.();
-          }, backoff);
+          scheduleReconnect(err?.is429 ? err.retryAfter : null);
         }
       });
-  }, [token, fetchUnreadCount, fetchNotifications, onNotificationReceived]);
+  }, [token, throttledBackgroundRefetch, scheduleReconnect, onNotificationReceived]);
 
   // Keep ref up to date
   useEffect(() => {
@@ -372,17 +482,20 @@ export function useNotifications(token, onNotificationReceived) {
         eventSourceRef.current.close();
         eventSourceRef.current = null;
       }
+      if (healthTimerRef.current) {
+        clearTimeout(healthTimerRef.current);
+      }
       if (reconnectTimeoutRef.current) {
         clearTimeout(reconnectTimeoutRef.current);
       }
     };
   }, [token, fetchUnreadCount]);
 
-  // Re-check on tab visibility focus
+  // Re-check on tab visibility focus (throttled to at most once per 30s)
   useEffect(() => {
     const handleVisibilityChange = () => {
       if (document.visibilityState === 'visible' && token) {
-        void fetchUnreadCount();
+        throttledBackgroundRefetch();
         if (!eventSourceRef.current || eventSourceRef.current.readyState === EventSource.CLOSED) {
           connectSSERef.current?.();
         }
@@ -391,7 +504,7 @@ export function useNotifications(token, onNotificationReceived) {
 
     document.addEventListener('visibilitychange', handleVisibilityChange);
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
-  }, [token, fetchUnreadCount]);
+  }, [token, throttledBackgroundRefetch]);
 
   return {
     notifications,
@@ -406,7 +519,7 @@ export function useNotifications(token, onNotificationReceived) {
     markAllAsRead,
     refetch: () => {
       void fetchUnreadCount();
-      void fetchNotifications({ reset: true });
+      void fetchNotifications({ reset: true, background: false });
     }
   };
 }

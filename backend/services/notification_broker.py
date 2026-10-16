@@ -21,7 +21,26 @@ class NotificationBroker:
         self._connections: Dict[uuid.UUID, List[asyncio.Queue]] = {}
         # ticket_str -> (user_id, expiry_timestamp)
         self._tickets: Dict[str, Tuple[uuid.UUID, float]] = {}
+        # (user_id, action) -> List of timestamps
+        self._rate_limits: Dict[Tuple[uuid.UUID, str], List[float]] = {}
         self._lock = asyncio.Lock()
+
+    def check_rate_limit(self, user_id: uuid.UUID, action: str, max_requests: int = 60, window_seconds: float = 60.0) -> bool:
+        """
+        In-memory sliding window rate limiter per user and action.
+        Returns True if allowed, False if rate limit exceeded.
+        """
+        now = time.time()
+        cutoff = now - window_seconds
+        key = (user_id, action)
+        timestamps = self._rate_limits.setdefault(key, [])
+        valid_timestamps = [t for t in timestamps if t > cutoff]
+        if len(valid_timestamps) >= max_requests:
+            self._rate_limits[key] = valid_timestamps
+            return False
+        valid_timestamps.append(now)
+        self._rate_limits[key] = valid_timestamps
+        return True
 
     def create_ticket(self, user_id: uuid.UUID) -> str:
         """Generates a secure, short-lived, single-use stream ticket. Never log this ticket."""

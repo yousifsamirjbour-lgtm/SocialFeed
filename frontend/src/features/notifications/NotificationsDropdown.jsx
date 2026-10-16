@@ -1,24 +1,7 @@
-import { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, memo } from 'react';
 import { getProfileImageUrl } from '../../config/api';
+import RelativeTime from './RelativeTime';
 import './NotificationsDropdown.css';
-
-function formatRelativeTime(dateString) {
-  if (!dateString) return '';
-  const date = new Date(dateString);
-  const now = new Date();
-  const diffSec = Math.max(0, Math.floor((now - date) / 1000));
-
-  if (diffSec < 45) return 'Just now';
-  const diffMin = Math.floor(diffSec / 60);
-  if (diffMin < 60) return `${diffMin}m`;
-  const diffHours = Math.floor(diffMin / 60);
-  if (diffHours < 24) return `${diffHours}h`;
-  const diffDays = Math.floor(diffHours / 24);
-  if (diffDays < 7) return `${diffDays}d`;
-  const diffWeeks = Math.floor(diffDays / 7);
-  if (diffWeeks < 4) return `${diffWeeks}w`;
-  return date.toLocaleDateString();
-}
 
 function renderNotificationText(notif) {
   const actorName = notif.actor?.name || 'Someone';
@@ -126,7 +109,87 @@ function renderTypeIcon(type) {
   }
 }
 
-export default function NotificationsDropdown({
+// Memoized individual notification item row
+const NotificationItem = memo(function NotificationItem({
+  notif,
+  onMarkAsRead,
+  onNavigateToPost,
+  isNew = false
+}) {
+  const avatarSrc = getProfileImageUrl(notif.actor?.profile_picture_url);
+  const postThumbnail = notif.post_media_url;
+  const isVideo = notif.post_media_url && /\.(mp4|webm|mov)$/i.test(notif.post_media_url);
+
+  return (
+    <div
+      className={`notif-item ${!notif.is_read ? 'unread' : 'read'} ${isNew ? 'notif-item-enter' : ''}`}
+      role="article"
+      onClick={() => {
+        if (!notif.is_read && onMarkAsRead) {
+          onMarkAsRead(notif.id);
+        }
+        if (onNavigateToPost && notif.post_id) {
+          onNavigateToPost(notif.post_id, notif.comment_id);
+        }
+      }}
+      tabIndex={0}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          if (!notif.is_read && onMarkAsRead) onMarkAsRead(notif.id);
+          if (onNavigateToPost && notif.post_id) {
+            onNavigateToPost(notif.post_id, notif.comment_id);
+          }
+        }
+      }}
+    >
+      <div className="notif-avatar-wrapper">
+        <img
+          src={avatarSrc}
+          alt={notif.actor?.name || 'User'}
+          className="notif-actor-avatar"
+          onError={(e) => {
+            e.currentTarget.src = '/default-avatar.svg';
+          }}
+        />
+        {renderTypeIcon(notif.type)}
+      </div>
+
+      <div className="notif-content">
+        <div className="notif-text">
+          {renderNotificationText(notif)}
+        </div>
+        <RelativeTime
+          dateString={notif.updated_at || notif.created_at}
+          className="notif-time"
+        />
+      </div>
+
+      {postThumbnail && (
+        <div className="notif-media-preview">
+          {isVideo ? (
+            <div className="notif-video-thumb">
+              <video src={postThumbnail} muted />
+              <div className="notif-video-play-badge">▶</div>
+            </div>
+          ) : (
+            <img
+              src={postThumbnail}
+              alt="Post thumbnail"
+              className="notif-thumb-img"
+            />
+          )}
+        </div>
+      )}
+
+      {!notif.is_read && (
+        <div className="notif-unread-dot" title="Unread" />
+      )}
+    </div>
+  );
+});
+
+export const NotificationsDropdown = memo(function NotificationsDropdown({
   isOpen,
   onClose,
   notifications = [],
@@ -141,6 +204,8 @@ export default function NotificationsDropdown({
   onRetry
 }) {
   const panelRef = useRef(null);
+  const seenIdsRef = useRef(new Set());
+  const isInitialMountRef = useRef(true);
 
   // Close on click outside (desktop)
   useEffect(() => {
@@ -148,7 +213,6 @@ export default function NotificationsDropdown({
 
     function handleClickOutside(event) {
       if (panelRef.current && !panelRef.current.contains(event.target)) {
-        // Check if clicked the toggle button
         if (event.target.closest('.nav-notifications-btn')) return;
         onClose();
       }
@@ -167,6 +231,16 @@ export default function NotificationsDropdown({
       document.removeEventListener('keydown', handleKeyDown);
     };
   }, [isOpen, onClose]);
+
+  // Track initial set of notification IDs so existing items do not replay entrance animations
+  useEffect(() => {
+    if (notifications.length > 0) {
+      if (isInitialMountRef.current) {
+        notifications.forEach((n) => seenIdsRef.current.add(n.id));
+        isInitialMountRef.current = false;
+      }
+    }
+  }, [notifications]);
 
   if (!isOpen) return null;
 
@@ -257,76 +331,19 @@ export default function NotificationsDropdown({
         ) : (
           <div className="notifs-list" role="feed">
             {notifications.map((notif) => {
-              const avatarSrc = getProfileImageUrl(notif.actor?.profile_picture_url);
-              const postThumbnail = notif.post_media_url;
-              const isVideo = notif.post_media_url && /\.(mp4|webm|mov)$/i.test(notif.post_media_url);
+              const isNew = !seenIdsRef.current.has(notif.id);
+              if (isNew) {
+                seenIdsRef.current.add(notif.id);
+              }
 
               return (
-                <div
+                <NotificationItem
                   key={notif.id}
-                  className={`notif-item ${!notif.is_read ? 'unread' : 'read'}`}
-                  role="article"
-                  onClick={() => {
-                    if (!notif.is_read && onMarkAsRead) {
-                      onMarkAsRead(notif.id);
-                    }
-                    if (onNavigateToPost && notif.post_id) {
-                      onNavigateToPost(notif.post_id, notif.comment_id);
-                    }
-                  }}
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault();
-                      if (!notif.is_read && onMarkAsRead) onMarkAsRead(notif.id);
-                      if (onNavigateToPost && notif.post_id) {
-                        onNavigateToPost(notif.post_id, notif.comment_id);
-                      }
-                    }
-                  }}
-                >
-                  <div className="notif-avatar-wrapper">
-                    <img
-                      src={avatarSrc}
-                      alt={notif.actor?.name || 'User'}
-                      className="notif-actor-avatar"
-                      onError={(e) => {
-                        e.currentTarget.src = '/default-avatar.svg';
-                      }}
-                    />
-                    {renderTypeIcon(notif.type)}
-                  </div>
-
-                  <div className="notif-content">
-                    <div className="notif-text">
-                      {renderNotificationText(notif)}
-                    </div>
-                    <span className="notif-time">
-                      {formatRelativeTime(notif.updated_at || notif.created_at)}
-                    </span>
-                  </div>
-
-                  {postThumbnail && (
-                    <div className="notif-media-preview">
-                      {isVideo ? (
-                        <div className="notif-video-thumb">
-                          <video src={postThumbnail} muted />
-                          <div className="notif-video-play-badge">▶</div>
-                        </div>
-                      ) : (
-                        <img
-                          src={postThumbnail}
-                          alt="Post thumbnail"
-                          className="notif-thumb-img"
-                        />
-                      )}
-                    </div>
-                  )}
-
-                  {!notif.is_read && (
-                    <div className="notif-unread-dot" title="Unread" />
-                  )}
-                </div>
+                  notif={notif}
+                  onMarkAsRead={onMarkAsRead}
+                  onNavigateToPost={onNavigateToPost}
+                  isNew={isNew && !isInitialMountRef.current}
+                />
               );
             })}
 
@@ -345,4 +362,6 @@ export default function NotificationsDropdown({
       </div>
     </div>
   );
-}
+});
+
+export default NotificationsDropdown;

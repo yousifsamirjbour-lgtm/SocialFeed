@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useMemo } from 'react';
 import './styles/App.css';
 import { API_BASE_URL } from './config/api';
 
@@ -84,10 +84,22 @@ function App() {
     setShowNotifications((prev) => {
       const next = !prev;
       if (next) {
-        fetchNotifications({ reset: true });
+        fetchNotifications({ reset: true, background: notifications.length > 0 });
       }
       return next;
     });
+  }, [fetchNotifications, notifications.length]);
+
+  const handleCloseNotifications = useCallback(() => {
+    setShowNotifications(false);
+  }, []);
+
+  const handleLoadMoreNotifications = useCallback(() => {
+    fetchNotifications({ offset: notifications.length });
+  }, [fetchNotifications, notifications.length]);
+
+  const handleRetryNotifications = useCallback(() => {
+    fetchNotifications({ reset: true });
   }, [fetchNotifications]);
 
   const navigateToAiStudio = useCallback((query = '', postId = null) => {
@@ -876,7 +888,7 @@ function App() {
         notificationsDropdown={
           <NotificationsDropdown
             isOpen={showNotifications}
-            onClose={() => setShowNotifications(false)}
+            onClose={handleCloseNotifications}
             notifications={notifications}
             unreadCount={unreadCount}
             loading={notifsLoading}
@@ -885,8 +897,8 @@ function App() {
             onMarkAsRead={markAsRead}
             onMarkAllAsRead={markAllAsRead}
             onNavigateToPost={handleNotificationNavigateToPost}
-            onLoadMore={() => fetchNotifications({ offset: notifications.length })}
-            onRetry={() => fetchNotifications({ reset: true })}
+            onLoadMore={handleLoadMoreNotifications}
+            onRetry={handleRetryNotifications}
           />
         }
       />
