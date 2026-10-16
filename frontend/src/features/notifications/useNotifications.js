@@ -166,7 +166,7 @@ export function useNotifications(token, onNotificationReceived) {
                   existing.actors_count === item.actors_count &&
                   existing.actor?.id === item.actor?.id &&
                   existing.comment_text === item.comment_text &&
-                  existing.post_media_url === item.post_media_url
+                  (existing.post_url || existing.post_media_url) === (item.post_url || item.post_media_url)
                 ) {
                   return existing; // Preserve object reference!
                 }

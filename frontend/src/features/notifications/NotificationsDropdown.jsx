@@ -117,8 +117,10 @@ const NotificationItem = memo(function NotificationItem({
   isNew = false
 }) {
   const avatarSrc = getProfileImageUrl(notif.actor?.profile_picture_url);
-  const postThumbnail = notif.post_media_url;
-  const isVideo = notif.post_media_url && /\.(mp4|webm|mov)$/i.test(notif.post_media_url);
+  const postThumbnail = notif.post_url || notif.post_media_url;
+  const isVideo = notif.post_file_type
+    ? notif.post_file_type.startsWith('video')
+    : Boolean(postThumbnail && /\.(mp4|webm|mov)$/i.test(postThumbnail));
 
   return (
     <div
