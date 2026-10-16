@@ -2,7 +2,7 @@ import uuid
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 from fastapi_users import schemas
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 class UserRead(schemas.BaseUser[uuid.UUID]):
     name: str
@@ -102,6 +102,7 @@ class NotificationResponse(BaseModel):
     post_url: Optional[str] = None
     post_file_type: Optional[str] = None
     comment_text: Optional[str] = None
+    extra_data: Optional[Dict[str, Any]] = None
     is_read: bool = False
     created_at: datetime
     updated_at: datetime
@@ -114,4 +115,46 @@ class NotificationsListResponse(BaseModel):
 
 class StreamTicketResponse(BaseModel):
     ticket: str
-    expires_in: int = 30
+    expires_in: int = 30
+
+class ConversationParticipant(BaseModel):
+    id: uuid.UUID
+    name: str
+    profile_picture_url: Optional[str] = None
+
+    model_config = ConfigDict(from_attributes=True)
+
+class DirectMessageResponse(BaseModel):
+    id: uuid.UUID
+    conversation_id: uuid.UUID
+    sender_id: uuid.UUID
+    sender: ConversationParticipant
+    text: Optional[str] = None
+    attachment_url: Optional[str] = None
+    attachment_name: Optional[str] = None
+    attachment_type: Optional[str] = None
+    attachment_size: Optional[int] = None
+    is_read: bool = False
+    created_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ConversationResponse(BaseModel):
+    id: uuid.UUID
+    participant: ConversationParticipant
+    last_message_text: Optional[str] = None
+    last_message_at: datetime
+    last_message_sender_id: Optional[uuid.UUID] = None
+    unread_count: int = 0
+    created_at: datetime
+    updated_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)
+
+class ConversationCreateRequest(BaseModel):
+    recipient_id: uuid.UUID
+
+class MessagesListResponse(BaseModel):
+    messages: List[DirectMessageResponse]
+    has_more: bool = False
+

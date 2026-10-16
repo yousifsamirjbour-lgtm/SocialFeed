@@ -1,7 +1,7 @@
 import uuid
 from collections.abc import AsyncGenerator
 from datetime import datetime, date, timezone
-from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Integer, JSON, Boolean, Index, text
+from sqlalchemy import Column, String, Text, DateTime, Date, ForeignKey, Integer, JSON, Boolean, Index, UniqueConstraint, text
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase, relationship
 from sqlalchemy.types import Uuid
@@ -123,6 +123,44 @@ class Notification(Base):
     post = relationship("post", foreign_keys=[post_id])
     comment = relationship("Comment", foreign_keys=[comment_id])
 
+
+class Conversation(Base):
+    __tablename__ = "conversations"
+    __table_args__ = (
+        UniqueConstraint("user1_id", "user2_id", name="uq_conversation_users"),
+    )
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    user1_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user2_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    last_message_text = Column(Text, nullable=True)
+    last_message_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+    last_message_sender_id = Column(GUID, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), onupdate=lambda: datetime.now(timezone.utc))
+
+    user1 = relationship("User", foreign_keys=[user1_id])
+    user2 = relationship("User", foreign_keys=[user2_id])
+    last_message_sender = relationship("User", foreign_keys=[last_message_sender_id])
+    messages = relationship("DirectMessage", back_populates="conversation", cascade="all, delete-orphan", order_by="DirectMessage.created_at.asc()")
+
+
+class DirectMessage(Base):
+    __tablename__ = "direct_messages"
+
+    id = Column(Uuid, primary_key=True, default=uuid.uuid4)
+    conversation_id = Column(Uuid, ForeignKey("conversations.id", ondelete="CASCADE"), nullable=False, index=True)
+    sender_id = Column(GUID, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    text = Column(Text, nullable=True)
+    attachment_url = Column(String(500), nullable=True)
+    attachment_name = Column(String(255), nullable=True)
+    attachment_type = Column(String(100), nullable=True)
+    attachment_size = Column(Integer, nullable=True)
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True)
+
+    conversation = relationship("Conversation", back_populates="messages")
+    sender = relationship("User", foreign_keys=[sender_id])
 
 
 class DocumentChunk(Base):
