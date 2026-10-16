@@ -39,10 +39,11 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
     const isHttps = window.location.protocol === 'https:';
     const wsProto = isHttps ? 'wss:' : 'ws:';
     const host = window.location.host;
-    // Handle Vite dev server proxying or direct port 8000
-    if (window.location.port === '5173') {
-      return `${wsProto}//${window.location.hostname}:8000/api/voice/stream`;
+    // On local HTTP dev server on port 5173, direct connect to port 8000
+    if (!isHttps && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1') && window.location.port === '5173') {
+      return `ws://${window.location.hostname}:8000/api/voice/stream`;
     }
+    // In production or HTTPS environments, always route through reverse proxy
     return `${wsProto}//${host}/api/voice/stream`;
   }, []);
 
@@ -125,18 +126,25 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
       silenceThresholdMs: 800,
       minUtteranceMs: 500,
       onSpeechStart: () => {
-        if (!isMutedRef.current) {
+        if (!isMutedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           setVoiceState('user_speaking');
         }
       },
       onBargeIn: () => {
-        if (!isMutedRef.current) {
+        if (!isMutedRef.current && wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
           handleInterrupt();
           setVoiceState('user_speaking');
         }
       },
       onUtteranceComplete: (samples, durationMs) => {
         if (isMutedRef.current) return;
+
+        // If WebSocket is not connected and open, do not transition into thinking state
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) {
+          setVoiceState((prev) => (prev === 'user_speaking' ? 'idle' : prev));
+          if (vadRef.current) vadRef.current.reset();
+          return;
+        }
 
         setVoiceState('thinking');
         const currentTurn = turnIdRef.current;
@@ -151,16 +159,14 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
         // Encode to 16kHz mono WAV
         const wavBuffer = encodeWAV(samples, 16000);
 
-        if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-          // Send JSON header first
-          wsRef.current.send(JSON.stringify({
-            type: 'user_audio_header',
-            turn_id: currentTurn,
-            duration_ms: Math.round(durationMs)
-          }));
-          // Send raw binary frame
-          wsRef.current.send(wavBuffer);
-        }
+        // Send JSON header first
+        wsRef.current.send(JSON.stringify({
+          type: 'user_audio_header',
+          turn_id: currentTurn,
+          duration_ms: Math.round(durationMs)
+        }));
+        // Send raw binary frame
+        wsRef.current.send(wavBuffer);
       }
     });
     vadRef.current = vad;
@@ -338,12 +344,19 @@ export function useVoiceConversation(token, { enabled = true } = {}) {
     ws.onerror = (err) => {
       console.error('Voice WebSocket connection error:', err);
       setConnectionStatus('error');
+      setVoiceState('idle');
       setErrorMessage('Could not connect to voice service.');
+      if (vadRef.current) {
+        vadRef.current.reset();
+      }
     };
 
     ws.onclose = (event) => {
       setConnectionStatus('disconnected');
       setVoiceState('idle');
+      if (vadRef.current) {
+        vadRef.current.reset();
+      }
       if (event.code === 1008) {
         setErrorMessage(event.reason || 'Authentication failed or quota exceeded.');
       }
