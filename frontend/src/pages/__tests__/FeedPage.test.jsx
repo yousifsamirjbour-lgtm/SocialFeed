@@ -98,7 +98,7 @@ describe('FeedPage', () => {
     render(<FeedPage {...defaultProps} navigateToAiStudio={navigateToAiStudio} />);
 
     expect(screen.getByText('AI Studio')).toBeInTheDocument();
-    expect(screen.getByText('New')).toBeInTheDocument();
+    expect(screen.queryByText('New')).not.toBeInTheDocument();
     expect(screen.getByText(/Analyze discussions, verify facts with live web search/i)).toBeInTheDocument();
 
     const openBtn = screen.getByRole('button', { name: /Open Studio/i });

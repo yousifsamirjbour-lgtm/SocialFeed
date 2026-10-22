@@ -39,7 +39,6 @@ const FeedPage = ({
             <div className="ai-studio-text-block">
               <div className="ai-studio-prompt-title">
                 <span>AI Studio</span>
-                <span className="ai-studio-new-badge">New</span>
               </div>
               <div className="ai-studio-prompt-sub">
                 Analyze discussions, verify facts with live web search, and turn them into verified posts.
